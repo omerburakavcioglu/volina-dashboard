@@ -9,14 +9,33 @@
 - [ ] Build command: `npm run build` (default)
 - [ ] Output directory: `.next` (default)
 
-## 2. Domain Configuration
+## 2. Domain Configuration (GoDaddy + Vercel)
 
-- [ ] In Vercel → Project Settings → Domains → Add `dashboard.volina.ai`
-- [ ] In DNS provider (where `volina.ai` is managed):
-  - Add **CNAME** record: `dashboard` → `cname.vercel-dns.com`
-  - Or follow Vercel's specific instructions for domain verification
-- [ ] Wait for SSL certificate provisioning (automatic by Vercel)
-- [ ] Verify `https://dashboard.volina.ai` resolves correctly
+### 2a. GoDaddy’da CNAME ekleme (volina.ai → GoDaddy)
+
+1. [godaddy.com](https://www.godaddy.com) → **My Products** → **volina.ai** → **DNS** (veya **Manage DNS**).
+2. **Records** bölümünde **Add** / **Add New Record**.
+3. Şu değerleri gir:
+   - **Type:** `CNAME`
+   - **Name:** `dashboard`  
+     (Bazı arayüzlerde “Host” veya “Subdomain” olarak geçer; sadece `dashboard` yaz, `.volina.ai` ekleme.)
+   - **Value / Points to:** Vercel Domains sayfasındaki **CNAME** değeri (projeye özel, örn. `6a3f6de1d2f4ca62.vercel-dns-017.com.` — ekrandaki Copy ile kopyala)
+   - **TTL:** 600 (veya 1 Hour) — varsayılan kalabilir.
+4. **Save** ile kaydet.
+
+**"Linked to another Vercel account" uyarısı için TXT kaydı (zorunlu):**  
+Vercel’de bu uyarı çıkıyorsa GoDaddy’da bir **TXT** kaydı daha ekle: **Type** `TXT`, **Name** `_vercel`, **Value** Vercel’deki TXT satırının tamamı (`vc-domain-verify=dashboard.volina.ai,...` — Copy ile kopyala). Doğrulama sonrası TXT’yi silebilirsin.
+
+### 2b. Vercel’de domain ekleme
+
+- [ ] Vercel Dashboard → **volina-dashboard** projesi → **Settings** → **Domains** → **Add** → `dashboard.volina.ai` yaz → **Add**.
+- DNS yayılımı 5–30 dakika sürebilir; Vercel doğrulayınca yeşil tik gelir.
+- SSL sertifikası Vercel tarafından otomatik verilir.
+
+### 2c. Kontrol
+
+- [ ] Tarayıcıda `https://dashboard.volina.ai` açılmalı.
+- [ ] Adres çubuğunda kilit ikonu (HTTPS) görünmeli.
 
 ## 3. Environment Variables (Vercel)
 
