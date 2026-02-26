@@ -43,8 +43,8 @@ export const translations = {
     
     // Stats
     allCalls: { en: "All", tr: "Tümü" },
-    transferred: { en: "Transferred", tr: "Aktarılan" },
-    successful: { en: "Successful", tr: "Başarılı" },
+    answered: { en: "Answered", tr: "Cevaplanan" },
+    interested: { en: "Interested", tr: "İlgili" },
     
     // Sorting
     sortBy: { en: "Sort by...", tr: "Sırala..." },
@@ -64,7 +64,6 @@ export const translations = {
     voicemail: { en: "Voicemail", tr: "Sesli Mesaj" },
     notReached: { en: "Not Reached", tr: "Ulaşılamadı" },
     hotLead: { en: "Hot Lead", tr: "Sıcak Müşteri" },
-    interested: { en: "Interested", tr: "İlgili" },
     neutral: { en: "Neutral", tr: "Nötr" },
     notInterested: { en: "Not Interested", tr: "İlgisiz" },
     

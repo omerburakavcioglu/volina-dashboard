@@ -22,6 +22,14 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
+  // Check for success messages (e.g. password updated)
+  useEffect(() => {
+    const msg = searchParams.get("message");
+    if (msg === "PasswordUpdated") {
+      setError(null);
+    }
+  }, [searchParams]);
+
   // Check for OAuth errors in URL
   useEffect(() => {
     const errorParam = searchParams.get("error");
@@ -144,6 +152,13 @@ function LoginContent() {
             </p>
           </div>
 
+          {/* Password updated success message */}
+          {searchParams.get("message") === "PasswordUpdated" && (
+            <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+              <p className="text-sm text-green-700 dark:text-green-300">Your password has been updated. Please sign in with your new password.</p>
+            </div>
+          )}
+
           {/* Error message */}
           {error && (
             <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3">
@@ -201,6 +216,15 @@ function LoginContent() {
                   )}
                 </button>
               </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary transition-colors"
+              >
+                Forgot password?
+              </Link>
             </div>
 
             <Button

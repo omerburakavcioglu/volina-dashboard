@@ -41,17 +41,102 @@ export async function GET(request: NextRequest) {
     const userAssistantId = await getUserAssistantId(supabase, userId);
 
     // Build query - MUST filter by user_id for security
-    let query = supabase
-      .from("calls")
-      .select("*")
-      .eq("user_id", userId)
-      .gte("created_at", startDate.toISOString())
-      .order("created_at", { ascending: false })
-      .limit(10000);
+    // Supabase has a default limit of 1000, so we need to use pagination to fetch all calls
+    let allCalls: CallRecord[] = [];
+    const pageSize = 1000; // Supabase's max per request
+    let hasMore = true;
+    let offset = 0;
+    let pageCount = 0;
     
-    const { data: allCalls, error } = await query as { data: CallRecord[] | null; error: { message: string } | null };
+    while (hasMore) {
+      pageCount++;
+      const { data: pageData, error } = await supabase
+        .from("calls")
+        .select("*")
+        .eq("user_id", userId)
+        .gte("created_at", startDate.toISOString())
+        .order("created_at", { ascending: false })
+        .range(offset, offset + pageSize - 1) as { data: CallRecord[] | null; error: { message: string } | null };
+      
+      if (error) {
+        console.error("Error fetching calls page:", error);
+        break;
+      }
+      
+      if (pageData && pageData.length > 0) {
+        allCalls = allCalls.concat(pageData);
+        console.log(`[Dashboard Calls] Fetched page ${pageCount}: ${pageData.length} calls (total: ${allCalls.length})`);
+        offset += pageSize;
+        hasMore = pageData.length === pageSize; // If we got less than pageSize, we're done
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    console.log(`[Dashboard Calls] Total pages fetched: ${pageCount}, Total calls: ${allCalls.length}`);
+    
+    const error = null; // No error if we got here
+    
+    // Log for debugging
+    console.log(`[Dashboard Calls] Total calls from DB: ${allCalls?.length || 0}, User ID: ${userId}, Assistant ID: ${userAssistantId}`);
+    
+    // Count calls by assistant_id for debugging
+    if (allCalls && allCalls.length > 0) {
+      const assistantIdCounts = new Map<string, number>();
+      const noAssistantIdCount = allCalls.filter(call => {
+        const callAssistantId = (call as Record<string, unknown>).assistant_id as string | undefined;
+        const metadataAssistantId = call.metadata?.assistantId as string | undefined;
+        return !callAssistantId && !metadataAssistantId;
+      }).length;
+      
+      allCalls.forEach(call => {
+        const callAssistantId = (call as Record<string, unknown>).assistant_id as string | undefined;
+        const metadataAssistantId = call.metadata?.assistantId as string | undefined;
+        const assistantId = callAssistantId || metadataAssistantId;
+        if (assistantId) {
+          assistantIdCounts.set(assistantId, (assistantIdCounts.get(assistantId) || 0) + 1);
+        }
+      });
+      
+      console.log(`[Dashboard Calls] Calls by assistant_id:`, Object.fromEntries(assistantIdCounts));
+      console.log(`[Dashboard Calls] Calls without assistant_id (legacy): ${noAssistantIdCount}`);
+      console.log(`[Dashboard Calls] Expected assistant_id: ${userAssistantId}`);
+    }
     
     const filteredCalls = filterVisibleDashboardCalls(allCalls || [], userAssistantId);
+    
+    // Log filtered count
+    console.log(`[Dashboard Calls] Filtered calls: ${filteredCalls.length}, Removed: ${(allCalls?.length || 0) - filteredCalls.length}`);
+
+    // Prepare debug info for client
+    const debugInfo = {
+      totalFromDB: allCalls?.length || 0,
+      filteredCount: filteredCalls.length,
+      removedCount: (allCalls?.length || 0) - filteredCalls.length,
+      assistantIdCounts: allCalls && allCalls.length > 0 ? (() => {
+        const counts = new Map<string, number>();
+        const noAssistantIdCount = allCalls.filter(call => {
+          const callAssistantId = (call as Record<string, unknown>).assistant_id as string | undefined;
+          const metadataAssistantId = call.metadata?.assistantId as string | undefined;
+          return !callAssistantId && !metadataAssistantId;
+        }).length;
+        
+        allCalls.forEach(call => {
+          const callAssistantId = (call as Record<string, unknown>).assistant_id as string | undefined;
+          const metadataAssistantId = call.metadata?.assistantId as string | undefined;
+          const assistantId = callAssistantId || metadataAssistantId;
+          if (assistantId) {
+            counts.set(assistantId, (counts.get(assistantId) || 0) + 1);
+          }
+        });
+        
+        return {
+          byAssistantId: Object.fromEntries(counts),
+          withoutAssistantId: noAssistantIdCount,
+          expectedAssistantId: userAssistantId
+        };
+      })() : null
+    };
 
     // Show ALL calls - don't filter by caller_name
     // Calls without caller_name will display phone number or "Unknown" in UI
@@ -60,8 +145,9 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Error fetching calls:", error);
+      const errorMessage = (error as { message?: string })?.message || String(error);
       return NextResponse.json(
-        { success: false, error: "Failed to fetch calls", details: error.message },
+        { success: false, error: "Failed to fetch calls", details: errorMessage },
         { status: 500 }
       );
     }
@@ -104,6 +190,7 @@ export async function GET(request: NextRequest) {
         appointmentRate,
       },
       source: "supabase",
+      debug: debugInfo, // Include debug info for client-side logging
     });
   } catch (error) {
     console.error("Dashboard calls error:", error);

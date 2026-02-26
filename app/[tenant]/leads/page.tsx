@@ -317,7 +317,7 @@ export default function LeadsPage() {
       return;
     }
     const leadIds = leads.map((l) => l.id).join(",");
-    fetch(`/api/dashboard/leads/evaluation-history?userId=${user.id}&leadIds=${encodeURIComponent(leadIds)}`)
+    fetch(`/api/dashboard/leads/evaluation-history?userId=${user.id}&leadIds=${encodeURIComponent(leadIds)}&includeAllCallsForUser=1`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {

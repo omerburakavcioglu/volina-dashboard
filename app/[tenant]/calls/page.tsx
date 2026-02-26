@@ -7,6 +7,7 @@ import {
   parseScore,
   estimateScore as estimateScoreShared,
   adjustScoreBasedOnContent,
+  computeCallScore,
 } from "@/lib/dashboard/call-scoring";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1516,15 +1517,11 @@ function CallRow({
     scoreDisplay = displayScore.toString();
     
     // Color gradient based on score:
-    // 1-3: Red (poor), 4-5: Orange (below average), 6-7: Yellow (neutral), 8-9: Light green, 10: Green (excellent)
+    // F, V, 1-3: Red, 4-6: Yellow, 7-10: Green
     if (displayScore <= 3) {
       badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
-    } else if (displayScore <= 5) {
-      badgeColor = { bg: "bg-orange-100 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-400" };
-    } else if (displayScore <= 7) {
+    } else if (displayScore <= 6) {
       badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
-    } else if (displayScore <= 9) {
-      badgeColor = { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-400" };
     } else {
       badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
     }
@@ -1774,6 +1771,21 @@ export default function CallsPage() {
       const response = await fetch(`/api/dashboard/calls?days=365&userId=${user.id}`);
       if (response.ok) {
         const data = await response.json();
+        
+        // Log debug info in browser console
+        if (data.debug) {
+          console.group('📊 [Calls Dashboard] Debug Info');
+          console.log('📥 Total calls from DB:', data.debug.totalFromDB);
+          console.log('✅ Filtered calls (visible):', data.debug.filteredCount);
+          console.log('❌ Removed by filters:', data.debug.removedCount);
+          if (data.debug.assistantIdCounts) {
+            console.log('🔍 Calls by assistant_id:', data.debug.assistantIdCounts.byAssistantId);
+            console.log('📞 Calls without assistant_id (legacy):', data.debug.assistantIdCounts.withoutAssistantId);
+            console.log('🎯 Expected assistant_id:', data.debug.assistantIdCounts.expectedAssistantId);
+          }
+          console.groupEnd();
+        }
+        
         if (data.success && data.data) {
           const transformedCalls: Call[] = data.data.map((call: {
             id: string;
@@ -1978,7 +1990,34 @@ export default function CallsPage() {
 
   // Stats
   const totalCalls = calls.length;
-  const successfulCalls = calls.filter(c => c.evaluation_score !== null && c.evaluation_score >= 7).length;
+  
+  // Calculate answered calls (F ve V harici - excluding F and V)
+  const answeredCalls = calls.filter(c => {
+    const scoreResult = computeCallScore({
+      evaluation_score: c.evaluation_score,
+      transcript: c.transcript,
+      summary: c.summary,
+      evaluation_summary: c.evaluation_summary,
+      duration: c.duration,
+      sentiment: c.sentiment,
+      metadata: c.metadata,
+    });
+    return scoreResult.display !== "F" && scoreResult.display !== "V";
+  }).length;
+  
+  // Calculate interested calls (7 üstü - 7 or higher)
+  const interestedCalls = calls.filter(c => {
+    const scoreResult = computeCallScore({
+      evaluation_score: c.evaluation_score,
+      transcript: c.transcript,
+      summary: c.summary,
+      evaluation_summary: c.evaluation_summary,
+      duration: c.duration,
+      sentiment: c.sentiment,
+      metadata: c.metadata,
+    });
+    return scoreResult.numericScore !== null && scoreResult.numericScore >= 7;
+  }).length;
 
   if (isLoading) {
     return (
@@ -2014,12 +2053,12 @@ export default function CallsPage() {
           <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{totalCalls}</p>
       </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("transferred")}</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">0</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("answered")}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{answeredCalls}</p>
           </div>
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 sm:p-4">
-          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("successful")}</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{successfulCalls}</p>
+          <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t("interested")}</p>
+          <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{interestedCalls}</p>
             </div>
             </div>
 

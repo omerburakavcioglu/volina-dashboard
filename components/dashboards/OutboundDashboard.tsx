@@ -123,6 +123,8 @@ export default function OutboundDashboard() {
   
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; total: number } | null>(null);
   
   // KPI Data
   const [monthlyCalls, setMonthlyCalls] = useState<number>(0);
@@ -134,17 +136,15 @@ export default function OutboundDashboard() {
   const [conversionRate, setConversionRate] = useState<number>(0);
   const [conversionRateTrend, setConversionRateTrend] = useState<{ value: number; type: "up" | "down" }>({ value: 0, type: "up" });
   
-  // Call Distribution (Donut chart data)
+  // Call Distribution (Donut chart data) - Only for answered calls (F and V excluded)
   const [callDistribution, setCallDistribution] = useState<{
-    appointment: number;
-    information: number;
-    followup: number;
-    cancellation: number;
+    low: number;      // 1-3 score
+    medium: number;  // 4-6 score
+    high: number;    // 7-10 score
   }>({
-    appointment: 0,
-    information: 0,
-    followup: 0,
-    cancellation: 0
+    low: 0,
+    medium: 0,
+    high: 0,
   });
   
   // Weekly Activity (Bar chart data)
@@ -223,10 +223,13 @@ export default function OutboundDashboard() {
         fetch(`/api/campaigns/auto-call?userId=${user.id}`).catch(() => null),
       ]);
 
+      let callsData: any = null;
+      let calls: Call[] = [];
+      
       if (callsResponse.ok) {
-        const callsData = await callsResponse.json();
+        callsData = await callsResponse.json();
         if (callsData.success && callsData.data) {
-          const calls: Call[] = callsData.data.map((call: any) => ({
+          calls = callsData.data.map((call: any) => ({
             id: call.id,
             user_id: call.user_id || "",
             vapi_call_id: call.vapi_call_id,
@@ -350,13 +353,37 @@ export default function OutboundDashboard() {
             type: rateChange >= 0 ? "up" : "down" 
           });
           
-          // Call Distribution
+          // Call Distribution - Only for answered calls (F and V excluded)
           const distribution = {
-            appointment: calls.filter(c => c.type === 'appointment' || c.metadata?.appointmentBooked).length,
-            information: calls.filter(c => c.type === 'inquiry' || (!c.type && !c.metadata?.appointmentBooked)).length,
-            followup: calls.filter(c => c.type === 'follow_up').length,
-            cancellation: calls.filter(c => c.type === 'cancellation').length,
+            low: 0,      // 1-3
+            medium: 0,  // 4-6
+            high: 0,    // 7-10
           };
+          
+          for (const call of calls) {
+            const scored = computeCallScore({
+              evaluation_score: call.evaluation_score,
+              transcript: call.transcript ?? null,
+              summary: call.summary ?? null,
+              evaluation_summary: call.evaluation_summary ?? null,
+              duration: call.duration ?? null,
+              sentiment: call.sentiment ?? null,
+              metadata: call.metadata ?? null,
+            });
+            
+            // Only count answered calls (exclude F and V)
+            if (scored.display !== "F" && scored.display !== "V" && scored.numericScore !== null) {
+              if (scored.numericScore >= 7) {
+                distribution.high++;
+              } else if (scored.numericScore >= 4) {
+                distribution.medium++;
+              } else {
+                // 1-3 scores
+                distribution.low++;
+              }
+            }
+          }
+          
           setCallDistribution(distribution);
           
           // Weekly Activity (last 7 days)
@@ -420,7 +447,7 @@ export default function OutboundDashboard() {
           setDailyCalls(0);
           setAvgDuration(0);
           setConversionRate(0);
-          setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
+          setCallDistribution({ low: 0, medium: 0, high: 0 });
           setWeeklyActivity([]);
           setImportantLeads([]);
         }
@@ -431,7 +458,7 @@ export default function OutboundDashboard() {
         setDailyCalls(0);
         setAvgDuration(0);
         setConversionRate(0);
-        setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
+        setCallDistribution({ low: 0, medium: 0, high: 0 });
         setWeeklyActivity([]);
         setImportantLeads([]);
       }
@@ -439,9 +466,81 @@ export default function OutboundDashboard() {
       // Handle leads response - pipeline counts + today's actions
       if (leadsResponse.ok) {
         const leadsData = await leadsResponse.json();
-        if (leadsData.success && leadsData.data) {
+        
+        // Use calls data if available (already loaded above), otherwise use leads data
+        if (callsData && callsData.success && callsData.data && calls.length > 0) {
+          const allCallsForPipeline: Call[] = calls;
+          
+          // Calculate pipeline counts based on call scores (more meaningful)
+          const counts: Record<string, number> = {
+            new: 0,
+            contacted: 0,
+            interested: 0,
+            appointment_set: 0,
+            converted: 0,
+            unreachable: 0,
+            lost: 0,
+          };
+          
+          // Count calls by score categories
+          for (const call of allCallsForPipeline) {
+            const scored = computeCallScore({
+              evaluation_score: call.evaluation_score,
+              transcript: call.transcript ?? null,
+              summary: call.summary ?? null,
+              evaluation_summary: call.evaluation_summary ?? null,
+              duration: call.duration ?? null,
+              sentiment: call.sentiment ?? null,
+              metadata: call.metadata ?? null,
+            });
+            
+            // Appointment Set: calls with appointment type or appointmentBooked
+            if (call.type === 'appointment' || call.metadata?.appointmentBooked) {
+              counts.appointment_set = (counts.appointment_set || 0) + 1;
+            }
+            // Converted: 9-10 score answered calls (very high interest)
+            else if (scored.display !== "F" && scored.display !== "V" && scored.numericScore !== null && scored.numericScore >= 9) {
+              counts.converted = (counts.converted || 0) + 1;
+            }
+            // Interested: 7-8 score answered calls
+            else if (scored.display !== "F" && scored.display !== "V" && scored.numericScore !== null && scored.numericScore >= 7) {
+              counts.interested = (counts.interested || 0) + 1;
+            }
+            // Contacted/Neutral: 4-6 score answered calls
+            else if (scored.display !== "F" && scored.display !== "V" && scored.numericScore !== null && scored.numericScore >= 4) {
+              counts.contacted = (counts.contacted || 0) + 1;
+            }
+            // Lost/Low Interest: 1-3 score answered calls
+            else if (scored.display !== "F" && scored.display !== "V" && scored.numericScore !== null) {
+              counts.lost = (counts.lost || 0) + 1;
+            }
+            // Unreachable: Voicemail calls
+            else if (scored.display === "V") {
+              counts.unreachable = (counts.unreachable || 0) + 1;
+            }
+            // Failed: Failed calls
+            else if (scored.display === "F") {
+              counts.unreachable = (counts.unreachable || 0) + 1; // Failed calls also count as unreachable
+            }
+          }
+          
+          // New: leads that haven't been called yet (if we have leads data)
+          if (leadsData.success && leadsData.data) {
+            const allLeads = leadsData.data as any[];
+            const calledLeadIds = new Set<string>();
+            for (const call of allCallsForPipeline) {
+              const meta = call.metadata as Record<string, unknown> | undefined;
+              if (meta?.lead_id) {
+                calledLeadIds.add(meta.lead_id as string);
+              }
+            }
+            counts.new = allLeads.filter((lead: any) => !calledLeadIds.has(lead.id)).length;
+          }
+          
+          setPipelineCounts(counts);
+        } else if (leadsData.success && leadsData.data) {
+          // Fallback to lead status counts if calls data not available
           const allLeads = leadsData.data as any[];
-          // Pipeline counts
           const counts: Record<string, number> = {
             new: 0, contacted: 0, interested: 0, appointment_set: 0,
             converted: 0, unreachable: 0, lost: 0,
@@ -453,8 +552,11 @@ export default function OutboundDashboard() {
             }
           }
           setPipelineCounts(counts);
+        }
 
-          // Today's actions: leads that need follow-up today or are "interested"/"appointment_set"
+        // Today's actions: leads that need follow-up today or are "interested"/"appointment_set"
+        if (leadsData.success && leadsData.data) {
+          const allLeads = leadsData.data as any[];
           const now = new Date();
           const todayStr = format(now, "yyyy-MM-dd");
           const actions = allLeads
@@ -508,7 +610,7 @@ export default function OutboundDashboard() {
       setDailyCalls(0);
       setAvgDuration(0);
       setConversionRate(0);
-      setCallDistribution({ appointment: 0, information: 0, followup: 0, cancellation: 0 });
+      setCallDistribution({ low: 0, medium: 0, high: 0 });
       setWeeklyActivity([]);
       setImportantLeads([]);
     } finally {
@@ -533,6 +635,41 @@ export default function OutboundDashboard() {
     setIsRefreshing(true);
     await loadData();
     setIsRefreshing(false);
+  };
+
+  const handleSyncVapi = async () => {
+    if (!user?.id) return;
+    
+    setIsSyncing(true);
+    setSyncResult(null);
+    
+    try {
+      const response = await fetch(`/api/vapi/sync?userId=${user.id}&days=14`, {
+        method: 'POST',
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setSyncResult({
+          synced: result.synced || 0,
+          skipped: result.skipped || 0,
+          total: result.total || 0,
+        });
+        // Refresh data after sync
+        await loadData();
+      } else {
+        console.error("Sync failed:", result);
+        const errorMessage = result.error || result.details || 'Unknown error';
+        alert(`Sync failed: ${errorMessage}\n\nCheck browser console for details.`);
+      }
+    } catch (error) {
+      console.error("Error syncing VAPI calls:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Error syncing VAPI calls: ${errorMessage}\n\nCheck browser console for details.`);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   if (isLoading) {
@@ -589,14 +726,12 @@ export default function OutboundDashboard() {
   // Pipeline total
   const pipelineTotal = Object.values(pipelineCounts).reduce((s, v) => s + v, 0);
 
-  // Calculate call distribution percentages for donut chart
-  const totalDistribution = callDistribution.appointment + callDistribution.information + 
-    callDistribution.followup + callDistribution.cancellation;
+  // Calculate call distribution percentages for donut chart (only answered calls)
+  const totalDistribution = callDistribution.low + callDistribution.medium + callDistribution.high;
   const distributionPercentages = {
-    appointment: totalDistribution > 0 ? (callDistribution.appointment / totalDistribution) * 100 : 0,
-    information: totalDistribution > 0 ? (callDistribution.information / totalDistribution) * 100 : 0,
-    followup: totalDistribution > 0 ? (callDistribution.followup / totalDistribution) * 100 : 0,
-    cancellation: totalDistribution > 0 ? (callDistribution.cancellation / totalDistribution) * 100 : 0,
+    low: totalDistribution > 0 ? (callDistribution.low / totalDistribution) * 100 : 0,
+    medium: totalDistribution > 0 ? (callDistribution.medium / totalDistribution) * 100 : 0,
+    high: totalDistribution > 0 ? (callDistribution.high / totalDistribution) * 100 : 0,
   };
 
   // Calculate max for weekly activity chart
@@ -627,6 +762,22 @@ export default function OutboundDashboard() {
               <SelectItem value="last_month">{t("lastMonth")}</SelectItem>
             </SelectContent>
           </Select>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleSyncVapi} 
+            disabled={isSyncing}
+            className="border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+            title="Sync calls from VAPI (last 14 days)"
+          >
+            <RefreshCw className={cn("w-4 h-4 sm:mr-2", isSyncing && "animate-spin")} />
+            <span className="hidden sm:inline">{isSyncing ? "Syncing..." : "Sync VAPI"}</span>
+          </Button>
+          {syncResult && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Synced: {syncResult.synced}, Skipped: {syncResult.skipped}
+            </span>
+          )}
               <Button 
                 variant="outline" 
             size="sm"
@@ -875,8 +1026,8 @@ export default function OutboundDashboard() {
                   strokeWidth="20"
                   className="text-gray-200 dark:text-gray-700"
                 />
-                {/* Segments */}
-                {distributionPercentages.appointment > 0 && (
+                {/* Segments - Only answered calls: 1-3 (red), 4-6 (yellow), 7-10 (green) */}
+                {distributionPercentages.low > 0 && (
                   <circle
                     cx="50"
                     cy="50"
@@ -884,12 +1035,12 @@ export default function OutboundDashboard() {
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="20"
-                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.appointment / 100)} ${2 * Math.PI * 40}`}
-                    className="text-blue-600 dark:text-blue-400"
+                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.low / 100)} ${2 * Math.PI * 40}`}
+                    className="text-red-600 dark:text-red-400"
                     strokeDashoffset="0"
                   />
                 )}
-                {distributionPercentages.information > 0 && (
+                {distributionPercentages.medium > 0 && (
                   <circle
                     cx="50"
                     cy="50"
@@ -897,12 +1048,12 @@ export default function OutboundDashboard() {
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="20"
-                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.information / 100)} ${2 * Math.PI * 40}`}
-                    className="text-purple-600 dark:text-purple-400"
-                    strokeDashoffset={`-${2 * Math.PI * 40 * (distributionPercentages.appointment / 100)}`}
+                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.medium / 100)} ${2 * Math.PI * 40}`}
+                    className="text-yellow-600 dark:text-yellow-400"
+                    strokeDashoffset={`-${2 * Math.PI * 40 * (distributionPercentages.low / 100)}`}
                   />
                 )}
-                {distributionPercentages.followup > 0 && (
+                {distributionPercentages.high > 0 && (
                   <circle
                     cx="50"
                     cy="50"
@@ -910,43 +1061,44 @@ export default function OutboundDashboard() {
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="20"
-                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.followup / 100)} ${2 * Math.PI * 40}`}
-                    className="text-orange-600 dark:text-orange-400"
-                    strokeDashoffset={`-${2 * Math.PI * 40 * ((distributionPercentages.appointment + distributionPercentages.information) / 100)}`}
-                  />
-                )}
-                {distributionPercentages.cancellation > 0 && (
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="40"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="20"
-                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.cancellation / 100)} ${2 * Math.PI * 40}`}
-                    className="text-red-600 dark:text-red-400"
-                    strokeDashoffset={`-${2 * Math.PI * 40 * ((distributionPercentages.appointment + distributionPercentages.information + distributionPercentages.followup) / 100)}`}
+                    strokeDasharray={`${2 * Math.PI * 40 * (distributionPercentages.high / 100)} ${2 * Math.PI * 40}`}
+                    className="text-green-600 dark:text-green-400"
+                    strokeDashoffset={`-${2 * Math.PI * 40 * ((distributionPercentages.low + distributionPercentages.medium) / 100)}`}
                   />
                 )}
               </svg>
             </div>
-            {/* Legend */}
-            <div className="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:gap-3 sm:ml-8">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-blue-600 dark:bg-blue-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("appointment")}</span>
+            {/* Legend - Only answered calls with counts and percentages */}
+            <div className="grid grid-cols-1 gap-2 sm:gap-3 sm:ml-8">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-600 dark:bg-red-400" />
+                  <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">Low Interest (1-3)</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">{callDistribution.low}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({distributionPercentages.low.toFixed(1)}%)</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-purple-600 dark:bg-purple-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("information")}</span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-yellow-600 dark:bg-yellow-400" />
+                  <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">Neutral (4-6)</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">{callDistribution.medium}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({distributionPercentages.medium.toFixed(1)}%)</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-orange-600 dark:bg-orange-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("followUp")}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-600 dark:bg-red-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("cancellation")}</span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-green-600 dark:bg-green-400" />
+                  <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">{t("interested")} (7-10)</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">{callDistribution.high}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({distributionPercentages.high.toFixed(1)}%)</span>
+                </div>
               </div>
             </div>
           </div>

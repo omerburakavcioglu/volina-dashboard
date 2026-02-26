@@ -112,7 +112,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const userAssistantId = await getUserAssistantId(supabase, userId);
+    const includeAllCallsForUser = searchParams.get("includeAllCallsForUser") === "1";
+    const userAssistantId = includeAllCallsForUser
+      ? null
+      : await getUserAssistantId(supabase, userId);
     const visibleCalls = filterVisibleDashboardCalls(calls || [], userAssistantId);
 
     const byLead: Record<string, typeof visibleCalls> = {};
@@ -156,6 +159,28 @@ export async function GET(request: NextRequest) {
         });
         return scored.display;
       });
+    }
+
+    // Diagnostics when all callCounts are zero (helps debug tenant-specific empty CALLS/EVAL)
+    const allCountsZero =
+      leadIds.length > 0 && leadIds.every((id) => (callCounts[id] ?? 0) === 0);
+    if (allCountsZero) {
+      const totalCalls = (calls || []).length;
+      const matchedToLeads = leadIds.reduce(
+        (sum, id) => sum + (byLead[id]?.length ?? 0),
+        0
+      );
+      console.log(
+        "[EvalHistory] All callCounts zero for request.",
+        "leadCount:",
+        leadIds.length,
+        "totalCalls:",
+        totalCalls,
+        "afterVisibility:",
+        visibleCalls.length,
+        "matchedToLeads:",
+        matchedToLeads
+      );
     }
 
     return NextResponse.json({ success: true, data: result, callCounts });
