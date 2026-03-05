@@ -1,7 +1,174 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { parseVapiEvaluation, parseVapiStructuredData } from "@/lib/vapi-evaluation-parser";
 import { cleanCallSummary } from "@/lib/utils";
+import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
+
+interface ParsedEvaluation {
+  score: number | null;
+  sentiment: "positive" | "neutral" | "negative";
+  outcome: string;
+  tags: string[];
+  summary: string | null;
+  objections?: string[];
+  nextAction?: string;
+}
+
+// Helper function to create default evaluation when transcript/summary is not available
+function createDefaultEvaluation(endedReason?: string): ParsedEvaluation {
+  if (!endedReason) {
+    return {
+      score: null,
+      sentiment: "neutral",
+      outcome: "needs_info",
+      tags: ["no_transcript"],
+      summary: "Arama tamamlandı ancak transkript mevcut değil.",
+    };
+  }
+
+  const reason = endedReason.toLowerCase();
+  
+  // Failed connections
+  if (reason.includes("voicemail") || reason === "voicemail") {
+    return {
+      score: null, // V - Voicemail
+      sentiment: "negative",
+      outcome: "voicemail",
+      tags: ["voicemail", "failed_call"],
+      summary: "Sesli mesaja düştü",
+    };
+  }
+  
+  if (reason.includes("no-answer") || reason.includes("no_answer") || reason === "customer-did-not-answer") {
+    return {
+      score: 1,
+      sentiment: "negative",
+      outcome: "no_answer",
+      tags: ["no_answer", "failed_call"],
+      summary: "Cevap verilmedi",
+    };
+  }
+  
+  if (reason.includes("busy") || reason === "customer-busy") {
+    return {
+      score: 1,
+      sentiment: "negative",
+      outcome: "busy",
+      tags: ["busy", "failed_call"],
+      summary: "Müşteri meşgul",
+    };
+  }
+  
+  // Customer ended call - could be positive or negative, default to neutral
+  if (reason.includes("customer-ended") || reason === "customer-ended-call") {
+    return {
+      score: 5,
+      sentiment: "neutral",
+      outcome: "needs_info",
+      tags: ["customer_ended", "needs_info"],
+      summary: "Müşteri aramayı sonlandırdı",
+    };
+  }
+  
+  // Assistant ended call - usually positive
+  if (reason.includes("assistant-ended") || reason === "assistant-ended-call") {
+    return {
+      score: 6,
+      sentiment: "neutral",
+      outcome: "needs_info",
+      tags: ["assistant_ended", "needs_info"],
+      summary: "Asistan aramayı sonlandırdı",
+    };
+  }
+  
+  // Default
+  return {
+    score: null,
+    sentiment: "neutral",
+    outcome: "needs_info",
+    tags: ["no_transcript"],
+    summary: `Arama tamamlandı. Sebep: ${endedReason}`,
+  };
+}
+
+// Import our own evaluation function
+// We'll define it here to avoid circular dependencies
+async function evaluateCallWithStructuredOutput(
+  transcript: string,
+  existingSummary?: string | null,
+  endedReason?: string
+): Promise<{
+  successEvaluation: {
+    score: number;
+    sentiment: "positive" | "neutral" | "negative";
+    outcome: string;
+    tags: string[];
+    objections?: string[];
+    nextAction?: string;
+  };
+  callSummary: {
+    callSummary: string;
+  };
+}> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  // Use our own evaluation prompt
+  const systemPrompt = EVALUATION_SYSTEM_PROMPT;
+
+  const userMessage = existingSummary 
+    ? `Arama Transkripti:\n${transcript}\n\nMevcut Özet:\n${existingSummary}${endedReason ? `\n\nEnded Reason: ${endedReason}` : ''}`
+    : `Arama Transkripti:\n${transcript}${endedReason ? `\n\nEnded Reason: ${endedReason}` : ''}`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.3,
+      max_tokens: 1000,
+      response_format: { type: "json_object" }, // Force JSON response
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("No response from OpenAI");
+  }
+
+  // Parse JSON response
+  try {
+    // Clean the response in case it has markdown code blocks
+    const cleanedContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleanedContent);
+    
+    // Validate structure
+    if (!parsed.successEvaluation || !parsed.callSummary) {
+      throw new Error("Invalid structured output format");
+    }
+    
+    return parsed;
+  } catch (error) {
+    console.error("Error parsing structured output:", error);
+    throw new Error(`Failed to parse structured output: ${error}`);
+  }
+}
 
 // Vapi webhook types - supporting multiple message types
 interface VapiWebhookPayload {
@@ -57,10 +224,10 @@ interface VapiWebhookPayload {
   };
 }
 
-// Determine call result based on analysis
+// Determine call result based on our own evaluation (VAPI analysis ignored)
 function determineCallResult(
   endedReason: string,
-  analysis?: { successEvaluation?: string; structuredData?: Record<string, unknown> }
+  ourEvaluation?: ParsedEvaluation
 ): string {
   // Check ended reason first
   if (endedReason === "customer-did-not-answer" || endedReason === "no-answer") {
@@ -72,34 +239,50 @@ function determineCallResult(
   if (endedReason === "voicemail") {
     return "voicemail";
   }
-  if (endedReason === "customer-ended-call") {
-    // Customer hung up - could be interested or not
-    if (analysis?.successEvaluation?.toLowerCase().includes("success")) {
-      return "answered_interested";
-    }
-    return "answered_not_interested";
-  }
   
-  // Check analysis for more detailed results
-  if (analysis?.successEvaluation) {
-    const evaluation = analysis.successEvaluation.toLowerCase();
-    if (evaluation.includes("appointment") || evaluation.includes("randevu")) {
+  // Use our own evaluation outcome
+  if (ourEvaluation?.outcome) {
+    const outcome = ourEvaluation.outcome;
+    if (outcome === "appointment_set") {
       return "answered_appointment_set";
     }
-    if (evaluation.includes("callback") || evaluation.includes("geri ara")) {
+    if (outcome === "callback_requested") {
       return "answered_callback_requested";
     }
-    if (evaluation.includes("success") || evaluation.includes("interested") || evaluation.includes("ilgili")) {
+    if (outcome === "interested") {
       return "answered_interested";
     }
-    if (evaluation.includes("not interested") || evaluation.includes("ilgisiz") || evaluation.includes("fail")) {
+    if (outcome === "not_interested") {
       return "answered_not_interested";
+    }
+    if (outcome === "voicemail") {
+      return "voicemail";
+    }
+    if (outcome === "no_answer") {
+      return "no_answer";
+    }
+    if (outcome === "busy") {
+      return "busy";
+    }
+  }
+  
+  // Fallback based on score
+  if (ourEvaluation?.score !== null && ourEvaluation?.score !== undefined) {
+    if (ourEvaluation.score >= 7) {
+      return "answered_interested";
+    }
+    if (ourEvaluation.score >= 5) {
+      return "answered_interested";
     }
   }
   
   // Default based on call completion
   if (endedReason === "assistant-ended-call" || endedReason === "silence-timed-out") {
     return "answered_interested";
+  }
+  
+  if (endedReason === "customer-ended-call") {
+    return "answered_not_interested";
   }
   
   return "answered_not_interested";
@@ -318,46 +501,74 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     );
   }
 
-  // Parse VAPI's structured output data (new format) or fallback to old format
-  // Priority: structuredData > successEvaluation string
-  let parsedEvaluation;
+  // USE ONLY OUR OWN EVALUATION - VAPI evaluation is completely ignored
+  let parsedEvaluation: ParsedEvaluation;
   let callSummaryFromStructured: string | null = null;
   
-  if (analysis?.structuredData && typeof analysis.structuredData === 'object') {
-    // New format: structured outputs
-    const structuredResult = parseVapiStructuredData(
-      analysis.structuredData as Record<string, unknown>,
-      call.endedReason
-    );
-    parsedEvaluation = structuredResult.evaluation;
-    callSummaryFromStructured = structuredResult.callSummary;
-    
-    console.log("Using structured output data:", {
-      hasEvaluation: !!parsedEvaluation,
-      hasCallSummary: !!callSummaryFromStructured,
-      structuredDataKeys: Object.keys(analysis.structuredData),
-    });
+  // Check if we have transcript or summary to evaluate
+  const textToEvaluate = transcript || summary || "";
+  
+  if (textToEvaluate) {
+    try {
+      console.log("=== RUNNING OUR OWN EVALUATION (VAPI IGNORED) ===");
+      console.log("Transcript length:", transcript?.length || 0);
+      console.log("Summary length:", summary?.length || 0);
+      
+      // Call our own evaluation function
+      const structuredEvaluation = await evaluateCallWithStructuredOutput(
+        textToEvaluate,
+        summary,
+        call.endedReason
+      );
+      
+      // Map our structured output
+      parsedEvaluation = {
+        score: structuredEvaluation.successEvaluation.score,
+        sentiment: structuredEvaluation.successEvaluation.sentiment as "positive" | "neutral" | "negative",
+        outcome: structuredEvaluation.successEvaluation.outcome,
+        tags: structuredEvaluation.successEvaluation.tags || [],
+        objections: structuredEvaluation.successEvaluation.objections,
+        nextAction: structuredEvaluation.successEvaluation.nextAction,
+        summary: structuredEvaluation.callSummary.callSummary,
+      };
+      
+      callSummaryFromStructured = structuredEvaluation.callSummary.callSummary;
+      
+      console.log("Our evaluation result:", {
+        score: parsedEvaluation.score,
+        sentiment: parsedEvaluation.sentiment,
+        outcome: parsedEvaluation.outcome,
+        tags: parsedEvaluation.tags,
+      });
+    } catch (error) {
+      console.error("Error running our evaluation:", error);
+      
+      // If evaluation fails, create a minimal default evaluation based on endedReason
+      const defaultEvaluation = createDefaultEvaluation(call.endedReason);
+      parsedEvaluation = defaultEvaluation;
+      callSummaryFromStructured = null;
+      
+      console.log("Using default evaluation due to error:", defaultEvaluation);
+    }
   } else {
-    // Old format: successEvaluation string (backward compatibility)
-    parsedEvaluation = parseVapiEvaluation(
-      analysis?.successEvaluation,
-      call.endedReason
-    );
-    console.log("Using legacy successEvaluation string");
+    // No transcript/summary available - create minimal evaluation from endedReason
+    console.log("No transcript/summary available, creating default evaluation from endedReason");
+    const defaultEvaluation = createDefaultEvaluation(call.endedReason);
+    parsedEvaluation = defaultEvaluation;
+    callSummaryFromStructured = null;
   }
   
   const sentiment = parsedEvaluation.sentiment;
   const evaluationScore = parsedEvaluation.score;
-  // Use structured call summary if available, otherwise fallback to old format
-  const evaluationSummary = parsedEvaluation.summary || analysis?.successEvaluation || null;
+  const evaluationSummary = parsedEvaluation.summary || callSummaryFromStructured || null;
   const tags = parsedEvaluation.tags;
 
-  console.log("Parsed evaluation:", {
+  console.log("Final evaluation (OUR OWN):", {
     score: evaluationScore,
     tags,
     sentiment,
     summary: evaluationSummary?.substring(0, 100),
-    callSummaryFromStructured: callSummaryFromStructured?.substring(0, 100),
+    source: "our_evaluation_only",
   });
 
   // Determine call type
@@ -384,8 +595,8 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
   const endTime = new Date(call.endedAt || new Date()).getTime();
   const duration = Math.round((endTime - startTime) / 1000);
 
-  // Determine call result for outreach
-  const callResult = determineCallResult(call.endedReason || "", analysis);
+  // Determine call result for outreach using our own evaluation
+  const callResult = determineCallResult(call.endedReason || "", parsedEvaluation);
 
   // Update outreach record if exists
   if (outreachId) {
@@ -393,7 +604,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       status: "completed",
       result: callResult,
       completed_at: new Date().toISOString(),
-      notes: summary || analysis?.summary || `Arama tamamlandı. Süre: ${duration}s`,
+      notes: callSummaryFromStructured || parsedEvaluation.summary || summary || `Arama tamamlandı. Süre: ${duration}s`,
       vapi_call_id: call.id,
     };
 
@@ -433,12 +644,29 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
 
   // Insert call record into calls table
   if (userId) {
-    // Priority for summary: structured callSummary > analysis.summary > summary parameter
-    const rawSummary = callSummaryFromStructured || analysis?.summary || summary || null;
+    // Use our own call summary (VAPI summary ignored)
+    const rawSummary = callSummaryFromStructured || parsedEvaluation.summary || summary || null;
     const cleanedSummary = cleanCallSummary(rawSummary);
 
     // Get assistant_id from call
     const assistantId = call.assistantId || call.assistant?.id || null;
+
+    // Store ONLY our own structured evaluation in metadata (VAPI evaluation completely ignored)
+    const ourStructuredData = {
+      successEvaluation: {
+        score: parsedEvaluation.score,
+        sentiment: parsedEvaluation.sentiment,
+        outcome: parsedEvaluation.outcome,
+        tags: parsedEvaluation.tags || [],
+        objections: parsedEvaluation.objections,
+        nextAction: parsedEvaluation.nextAction,
+      },
+      callSummary: {
+        callSummary: callSummaryFromStructured || parsedEvaluation.summary || null,
+      },
+      evaluationSource: "our_evaluation_only",
+      evaluatedAt: new Date().toISOString(),
+    };
 
     const insertData = {
       user_id: userId,
@@ -459,7 +687,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
         orgId: call.orgId,
         status: call.status,
         endedReason: call.endedReason,
-        structuredData: analysis?.structuredData,
+        structuredData: ourStructuredData,
         outreach_id: outreachId,
         lead_id: leadId,
         assistantId: assistantId,

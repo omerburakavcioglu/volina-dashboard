@@ -1507,22 +1507,27 @@ function CallRow({
   
   if (isVoicemailFinal) {
     scoreDisplay = "V";
-    badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
+    badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
   } else if (isFailedCall) {
     scoreDisplay = "F";
-    badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
+    badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
   } else {
-    // Show numeric score (1-10)
+    // Show score with new system: HR (1-2), SR (3-6), or score (7-10)
     const displayScore = effectiveScore || 5;
-    scoreDisplay = displayScore.toString();
     
-    // Color gradient based on score:
-    // F, V, 1-3: Red, 4-6: Yellow, 7-10: Green
-    if (displayScore <= 3) {
+    // New display system:
+    // 1-2: HR (Hard Reject) - Red
+    // 3-6: SR (Soft Reject) - Yellow
+    // 7-10: Show actual score - Green
+    if (displayScore <= 2) {
+      scoreDisplay = "HR";
       badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
     } else if (displayScore <= 6) {
+      scoreDisplay = "SR";
       badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
     } else {
+      // Positive (7-10) - show score in green
+      scoreDisplay = displayScore.toString();
       badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
     }
   }
