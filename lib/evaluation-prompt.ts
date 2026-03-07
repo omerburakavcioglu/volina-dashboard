@@ -37,6 +37,15 @@ PRIORITY 1 - FAILED CONNECTIONS (Score 1-2, outcome "voicemail", "no_answer", "w
 8. VOICEMAIL SYSTEM MESSAGES (CRITICAL - NOT HARD REJECT):
    - "Mailbox that has not been set up yet", "mailbox is full", "mailbox is not set up", "mailbox unavailable", "please leave a message after the tone" → score 1, outcome "voicemail" (NOT hard reject - this is voicemail system message, NOT customer rejection)
    - These are automated voicemail system messages, NOT a real person rejecting the offer
+9. MEANINGLESS INPUT / GIBBERISH / TRANSCRIPTION ERRORS (CRITICAL - NOT ENGAGEMENT):
+   - If the user's response is just a series of numbers (e.g., "1 4 5 0 3 0 2 3 3") → score 1-2, outcome "no_answer"
+   - If the user's response is gibberish, meaningless words, or random characters (e.g., "In zoom keids for this dinner udaigstanut. Persagiros kai dit del mister") → score 1-2, outcome "no_answer"
+   - If the user's response is a mix of languages that doesn't form meaningful sentences (e.g., "Tu sais se, até sair siniculando-nos e tintei achei que olhar") → score 1-2, outcome "no_answer"
+   - If the AI says "Sorry, I didn't quite understand" or similar confusion phrases → check if user input was meaningful; if not → score 1-2, outcome "no_answer"
+   - If the user's words don't form coherent sentences or meaningful communication → score 1-2, outcome "no_answer"
+   - This is NOT a real conversation or engagement - it's likely a transcription error, wrong number, language barrier, or user confusion
+   - NEVER give score > 2 for meaningless input, gibberish, or transcription errors
+   - NEVER give score 7-10 if the conversation contains only meaningless words or gibberish
 
 PRIORITY 2 - HARD REJECT (Score 1-2, ONLY for explicit rejection by REAL PERSON):
 ⚠️ CRITICAL: HARD REJECT is ONLY when a REAL PERSON (not automated system) EXPLICITLY and STRONGLY rejects the service/offer:
@@ -90,7 +99,7 @@ PRIORITY 4 - POSITIVE ENGAGEMENT (Score 7-10):
 15. If customer requested callback or follow-up → score 8-9, outcome "callback_requested"
 
 Scoring (1-10):
-- 1: No connection (voicemail, no answer, busy, only AI spoke, customer never responded, call <15 seconds, operator/receptionist screening)
+- 1: No connection (voicemail, no answer, busy, only AI spoke, customer never responded, call <15 seconds, operator/receptionist screening, meaningless input/gibberish/transcription errors)
 - 2: Hard reject (explicit "not interested", "stop calling", "remove me", hostile/rude, immediate hang up - ONLY from real person, NOT technical errors)
 - 3: Soft reject - minimal polite response (just "I'm good", "fine", "okay", "yes" without engagement, polite but not interested)
 - 4: Soft reject - polite decline (said "no" politely, minimal conversation, no questions asked, brief polite responses)
@@ -131,8 +140,12 @@ CRITICAL SCORING GUIDELINES:
 - NEVER give high scores (7-10) if user explicitly said they can't take the call or are unavailable - this is a failed connection, not a success
 - Count user's actual words: if user said less than 10 meaningful words, MAX score is 5
 - If user only responded with single words ("yes", "no", "okay", "hello") without context, MAX score is 3
-- CRITICAL: If user only said numbers (like "1 4 5 0 3 0 2 3 3"), random characters, or meaningless input → score 1-2, outcome "no_answer" (NOT a real conversation, likely wrong number or user didn't understand)
-- NEVER give high scores (7-10) if user only said numbers or meaningless input - this is NOT engagement
+- CRITICAL: If user only said numbers (like "1 4 5 0 3 0 2 3 3"), random characters, gibberish, meaningless words, or transcription errors → score 1-2, outcome "no_answer" (NOT a real conversation, likely wrong number, transcription error, language barrier, or user didn't understand)
+- CRITICAL: If user's response is gibberish or meaningless (e.g., "In zoom keids for this dinner udaigstanut. Persagiros kai dit del mister") → score 1-2, outcome "no_answer" (NOT engagement, likely transcription error or confusion)
+- CRITICAL: If user's response is a mix of languages that doesn't form meaningful sentences → score 1-2, outcome "no_answer" (NOT engagement)
+- CRITICAL: If AI says "Sorry, I didn't quite understand" or similar confusion phrases, and user input was meaningless → score 1-2, outcome "no_answer" (NOT engagement)
+- NEVER give high scores (7-10) if user only said numbers, gibberish, meaningless input, or transcription errors - this is NOT engagement
+- NEVER give score > 2 for meaningless input, gibberish, or transcription errors
 - OPERATOR/RECEPTIONIST: If someone says "I'll see if this person is available", "please stay on the line", "hold on", "let me check", "let me transfer" → this is NOT the target person. The AI never reached the actual customer. Score 1, outcome "no_answer". Do NOT treat operator phrases as customer engagement.
 - "Please stay on the line" is NOT a real conversation. It is an operator or automated system. Score 1.
 
