@@ -6,7 +6,24 @@
 
 export const EVALUATION_SYSTEM_PROMPT = `Analyze this call and evaluate its success. You must fill ALL required fields in the structured output.
 
-⚠️ CRITICAL: Before classifying as HARD REJECT, check these FIRST:
+⚠️⚠️⚠️ CRITICAL: Before classifying as HARD REJECT or giving HIGH SCORES (7-10), check these FIRST:
+0. ⚠️⚠️⚠️ IS IT MEANINGLESS INPUT? → outcome "no_answer", score 1-2 (NOT engagement, NOT high score)
+   - ⚠️⚠️⚠️ EXACT EXAMPLE THAT MUST BE SCORE 1-2:
+     "AI: Hi, how are you doing today?
+      User: 145 0 30233.
+      AI: Please call back when you're available."
+     → User only said NUMBERS ("145 0 30233") = MEANINGLESS INPUT
+     → AI said "Please call back when you're available" = AI gave up = FAILED CONNECTION
+     → Score MUST be 1-2, outcome "no_answer"
+     → This is NOT score 7-10, this is NOT engagement, this is a FAILED CONNECTION
+   - User only said NUMBERS (e.g., "1 4 5 0 3 0 2 3 3", "145 0 30233", "1 2 3 4 5") = MEANINGLESS INPUT = score 1-2, outcome "no_answer"
+   - User said gibberish, random words, or meaningless text = MEANINGLESS INPUT = score 1-2, outcome "no_answer"
+   - User said mixed languages that don't form sentences = MEANINGLESS INPUT = score 1-2, outcome "no_answer"
+   - AI says "Please call back when you're available" after meaningless input = FAILED CONNECTION = score 1-2, outcome "no_answer"
+   - ⚠️ CRITICAL: If user response contains ONLY numbers (no words, no sentences) → score 1-2, outcome "no_answer"
+   - ⚠️ CRITICAL: "145 0 30233" = ONLY NUMBERS = MEANINGLESS INPUT = score 1-2, NOT 7-10
+   - NEVER give score > 2 for meaningless input - this is NOT engagement, it's a failed connection
+   - NEVER give score 7-10 if user only said numbers or meaningless input
 1. Is it a TECHNICAL ERROR? → outcome "wrong_number" (NOT hard reject)
    - "Number you requested cannot be dialed" = TECHNICAL ERROR
    - "This number is not in service" = TECHNICAL ERROR
@@ -37,15 +54,31 @@ PRIORITY 1 - FAILED CONNECTIONS (Score 1-2, outcome "voicemail", "no_answer", "w
 8. VOICEMAIL SYSTEM MESSAGES (CRITICAL - NOT HARD REJECT):
    - "Mailbox that has not been set up yet", "mailbox is full", "mailbox is not set up", "mailbox unavailable", "please leave a message after the tone" → score 1, outcome "voicemail" (NOT hard reject - this is voicemail system message, NOT customer rejection)
    - These are automated voicemail system messages, NOT a real person rejecting the offer
-9. MEANINGLESS INPUT / GIBBERISH / TRANSCRIPTION ERRORS (CRITICAL - NOT ENGAGEMENT):
-   - If the user's response is just a series of numbers (e.g., "1 4 5 0 3 0 2 3 3") → score 1-2, outcome "no_answer"
+9. MEANINGLESS INPUT / GIBBERISH / TRANSCRIPTION ERRORS (CRITICAL - NOT ENGAGEMENT - CHECK THIS FIRST!):
+   ⚠️⚠️⚠️ THIS IS THE HIGHEST PRIORITY - CHECK BEFORE GIVING ANY SCORE > 2:
+   - ⚠️⚠️⚠️ SPECIFIC EXAMPLE: If transcript shows:
+     "AI: Hi, how are you doing today?
+      User: 1 4 5 0 3 0 2 3 3.
+      AI: Please call back when you're available."
+     → This is MEANINGLESS INPUT (user only said numbers) + AI ended call early
+     → Score MUST be 1-2, outcome "no_answer"
+     → This is NOT engagement, NOT a successful call, NOT score 7-10
+     → This is a FAILED CONNECTION due to meaningless input
+   - If the user's response is just a series of numbers (e.g., "1 4 5 0 3 0 2 3 3", "1 2 3 4 5", "9 8 7 6 5") → score 1-2, outcome "no_answer" (NOT engagement, NOT 7-10)
    - If the user's response is gibberish, meaningless words, or random characters (e.g., "In zoom keids for this dinner udaigstanut. Persagiros kai dit del mister") → score 1-2, outcome "no_answer"
    - If the user's response is a mix of languages that doesn't form meaningful sentences (e.g., "Tu sais se, até sair siniculando-nos e tintei achei que olhar") → score 1-2, outcome "no_answer"
-   - If the AI says "Sorry, I didn't quite understand" or similar confusion phrases → check if user input was meaningful; if not → score 1-2, outcome "no_answer"
+   - ⚠️ CRITICAL PATTERN: If AI says "Please call back when you're available" → this means AI gave up because user input was meaningless or confusing
+     → Check user input: if user only said numbers, gibberish, or meaningless words → score 1-2, outcome "no_answer"
+     → "Please call back when you're available" = AI ended call due to failed communication = FAILED CONNECTION
+     → This is NEVER a successful call (score 7-10), it's ALWAYS a failed connection (score 1-2)
+   - If the AI says "Sorry, I didn't quite understand" or similar confusion phrases → check if user input was meaningful; if user only said numbers or meaningless input → score 1-2, outcome "no_answer"
    - If the user's words don't form coherent sentences or meaningful communication → score 1-2, outcome "no_answer"
+   - If AI ends call early because user input was meaningless (e.g., "Please call back when you're available" after user said only numbers) → score 1-2, outcome "no_answer"
    - This is NOT a real conversation or engagement - it's likely a transcription error, wrong number, language barrier, or user confusion
-   - NEVER give score > 2 for meaningless input, gibberish, or transcription errors
-   - NEVER give score 7-10 if the conversation contains only meaningless words or gibberish
+   - ⚠️ CRITICAL: NEVER give score > 2 for meaningless input, gibberish, or transcription errors
+   - ⚠️ CRITICAL: NEVER give score 7-10 if the conversation contains only meaningless words, numbers, or gibberish
+   - ⚠️ CRITICAL: If user only said numbers (like "1 4 5 0 3 0 2 3 3") and AI said "Please call back when you're available" → this is a FAILED CONNECTION, score 1-2, outcome "no_answer", NOT a successful call (score 7-10)
+   - ⚠️ CRITICAL: "Please call back when you're available" = AI gave up = FAILED CONNECTION = score 1-2, NOT 7-10
 
 PRIORITY 2 - HARD REJECT (Score 1-2, ONLY for explicit rejection by REAL PERSON):
 ⚠️ CRITICAL: HARD REJECT is ONLY when a REAL PERSON (not automated system) EXPLICITLY and STRONGLY rejects the service/offer:
@@ -93,10 +126,29 @@ PRIORITY 3 - MINIMAL ENGAGEMENT / SOFT REJECT (Score 3-6):
 14. If call duration <20 seconds and customer showed no interest → score 3-4, outcome "not_interested" (SOFT REJECT)
 
 PRIORITY 4 - POSITIVE ENGAGEMENT (Score 7-10):
+⚠️⚠️⚠️ CRITICAL: Before giving score 7-10, verify ALL of these:
+- ✅ User said MEANINGFUL words (NOT just numbers like "1 4 5 0 3 0 2 3 3", NOT gibberish, NOT meaningless input)
+- ✅ User engaged in REAL conversation with actual words (NOT just numbers, NOT random characters)
+- ✅ AI did NOT say "Please call back when you're available" - if AI said this, it means AI gave up = FAILED CONNECTION = score 1-2
+- ✅ User's response forms a meaningful sentence or question (NOT just "1 4 5 0 3 0 2 3 3")
+- ⚠️ IF ANY OF THESE FAIL → DO NOT give score 7-10, give score 1-2 instead (outcome "no_answer")
+- ⚠️ SPECIFIC EXAMPLE: "AI: Hi, how are you doing today? User: 1 4 5 0 3 0 2 3 3. AI: Please call back when you're available."
+  → User only said numbers + AI gave up = FAILED CONNECTION
+  → Score MUST be 1-2, outcome "no_answer"
+  → This is NOT score 7-10, this is NOT engagement
 12. IMPORTANT: If customer initially said "no" but THEN showed positive engagement (e.g., "I'm gonna hear", "tell me more", "yeah", "open to", "considering", "finding a solution", "let me think about it") → score 7-8, outcome "interested" (this shows they changed their mind or are open to learning more)
 13. ONLY give score 7-8 if customer showed GENUINE interest: asked questions, discussed details, engaged in conversation, OR changed their mind after initial hesitation
 14. ONLY give score 9-10 if appointment was set, sale was made, or strong commitment was given → outcome "appointment_set" or "interested"
 15. If customer requested callback or follow-up → score 8-9, outcome "callback_requested"
+16. ⚠️⚠️⚠️ NEVER give score 7-10 if user only said numbers (e.g., "1 4 5 0 3 0 2 3 3") - this is meaningless input, score 1-2, outcome "no_answer"
+17. ⚠️⚠️⚠️ NEVER give score 7-10 if AI said "Please call back when you're available" - this means AI gave up = FAILED CONNECTION = score 1-2, outcome "no_answer"
+18. ⚠️⚠️⚠️ SPECIFIC EXAMPLE THAT MUST BE SCORE 1-2:
+    "AI: Hi, how are you doing today?
+     User: 1 4 5 0 3 0 2 3 3.
+     AI: Please call back when you're available."
+    → User only said numbers + AI gave up = FAILED CONNECTION
+    → Score MUST be 1-2, outcome "no_answer"
+    → This is NOT score 7-10, this is NOT engagement, this is a FAILED CONNECTION
 
 Scoring (1-10):
 - 1: No connection (voicemail, no answer, busy, only AI spoke, customer never responded, call <15 seconds, operator/receptionist screening, meaningless input/gibberish/transcription errors)

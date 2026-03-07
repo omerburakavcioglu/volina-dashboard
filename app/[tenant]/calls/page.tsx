@@ -25,6 +25,7 @@ import {
   ChevronUp,
   Calendar,
   ArrowUpDown,
+  RotateCcw,
 } from "lucide-react";
 import {
   Select,
@@ -506,6 +507,31 @@ function estimateScore(call: Call): number | null {
 // Returns: 1 = V (voicemail), 2 = F (failed), then 3-12 based on 1-10 score (inverted for high scores first)
 function getCallSortKey(call: Call): number {
   const metadata = call.metadata as Record<string, unknown> | undefined;
+  
+  // === FAST PATH: If evaluated by our AI system, use its outcome/score directly ===
+  const structuredData = metadata?.structuredData as Record<string, unknown> | undefined;
+  const evaluationSource = structuredData?.evaluationSource as string | undefined;
+  
+  if (evaluationSource === 'our_evaluation_only' && structuredData?.successEvaluation) {
+    const successEval = structuredData.successEvaluation as Record<string, unknown>;
+    const aiScore = typeof successEval.score === 'number' ? successEval.score : null;
+    const aiOutcome = (successEval.outcome as string || '').toLowerCase();
+    
+    // V = 1, F = 2, HR (1-2) = 3-4, SR (3-6) = 5-8, Score (7-10) = 9-12
+    if (aiOutcome === 'voicemail') {
+      return 1;
+    }
+    if (aiOutcome === 'no_answer' || aiOutcome === 'wrong_number' || aiOutcome === 'busy') {
+      return 2;
+    }
+    if (aiScore !== null && aiScore >= 1 && aiScore <= 10) {
+      return aiScore + 2; // Score 1 → 3, Score 10 → 12
+    }
+    // Fallback
+    return 2;
+  }
+  
+  // === LEGACY PATH: Pattern-based sorting for calls not evaluated by our AI ===
   const endedReason = (metadata?.endedReason as string || '').toLowerCase();
   const evalSummary = (call.evaluation_summary || '').toLowerCase();
   const callSummary = (call.summary || '').toLowerCase();
@@ -1034,20 +1060,96 @@ function CallRow({
   call, 
   onPlay,
   onUpdate,
+  onCallUpdated,
   lang
 }: { 
   call: Call;
   onPlay: (call: Call) => void;
-  onUpdate?: () => void;
+  onUpdate?: (forceRefresh?: boolean) => void;
+  onCallUpdated?: (callId: string, updatedCall: Call) => void;
   lang?: "en" | "tr";
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [isReEvaluating, setIsReEvaluating] = useState(false);
   const { language: contextLanguage } = useLanguage();
   
   // Use prop lang if provided, otherwise use context language
   // Ensure it's a valid language code
   const currentLang: "en" | "tr" = (lang === "tr" || lang === "en") ? lang : 
                                     (contextLanguage === "tr" || contextLanguage === "en") ? contextLanguage : "en";
+
+  const handleReEvaluate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isReEvaluating) return;
+    
+    setIsReEvaluating(true);
+    try {
+      const response = await fetch('/api/calls/re-evaluate-structured', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callId: call.id, force: true }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Show success message with new score
+          console.log('Re-evaluation successful:', data);
+          const newScore = data.newScore;
+          const newOutcome = data.newOutcome;
+          console.log(`New score: ${newScore}, New outcome: ${newOutcome}`);
+          
+          // Show success notification
+          if (newScore !== undefined) {
+            console.log(`[Re-evaluate] New score received: ${newScore}, outcome: ${newOutcome}`);
+          }
+          
+          // Update call in state immediately with new score
+          if (onCallUpdated && newScore !== undefined) {
+            const updatedCall: Call = {
+              ...call,
+              evaluation_score: newScore,
+              metadata: {
+                ...call.metadata,
+                structuredData: {
+                  ...(call.metadata?.structuredData as Record<string, unknown> || {}),
+                  successEvaluation: {
+                    ...((call.metadata?.structuredData as Record<string, unknown>)?.successEvaluation as Record<string, unknown> || {}),
+                    score: newScore,
+                    outcome: newOutcome || 'no_answer',
+                  },
+                  evaluatedAt: new Date().toISOString(),
+                  evaluationSource: 'our_evaluation_only',
+                },
+              },
+            };
+            console.log(`[Re-evaluate] Updating call ${call.id} in state with score ${newScore}`);
+            onCallUpdated(call.id, updatedCall);
+          }
+          
+          // Also refresh the full list after a delay to ensure DB is updated
+          setTimeout(() => {
+            if (onUpdate) {
+              console.log('[Re-evaluate] Refreshing full call list...');
+              (onUpdate as (forceRefresh?: boolean) => void)(true);
+            }
+          }, 2000);
+        } else {
+          console.error('Re-evaluation failed:', data);
+          alert(currentLang === "tr" ? "Re-evaluation başarısız: " + (data.error || "Bilinmeyen hata") : "Re-evaluation failed: " + (data.error || "Unknown error"));
+        }
+      } else {
+        const error = await response.json();
+        console.error('Re-evaluation API error:', error);
+        alert(currentLang === "tr" ? "Re-evaluation başarısız: " + (error.error || "Bilinmeyen hata") : "Re-evaluation failed: " + (error.error || "Unknown error"));
+      }
+    } catch (error) {
+      console.error('Re-evaluation error:', error);
+      alert(currentLang === "tr" ? "Re-evaluation sırasında hata oluştu" : "Error during re-evaluation");
+    } finally {
+      setIsReEvaluating(false);
+    }
+  };
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
@@ -1065,6 +1167,11 @@ function CallRow({
   const evalSummary = (call.evaluation_summary || '').toLowerCase();
   const callSummary = (call.summary || '').toLowerCase();
   const transcript = (call.transcript || '').toLowerCase();
+  
+  // === CHECK: If evaluated by our AI system, trust it directly ===
+  const structuredData = metadata?.structuredData as Record<string, unknown> | undefined;
+  const evaluationSource = structuredData?.evaluationSource as string | undefined;
+  const isOurEvaluation = evaluationSource === 'our_evaluation_only';
   
   // === SMART CALL CLASSIFICATION ALGORITHM ===
   
@@ -1501,24 +1608,46 @@ function CallRow({
     (aiOnlySpoke && isVeryShortCall);
   
   // Determine what to display in score badge
-  // V = Voicemail (red), F = Failed (red), 1-10 = Score with color gradient
+  // V = Voicemail (grey), F = Failed (grey), HR = Hard Reject (red), SR = Soft Reject (yellow), 7-10 = Score (green)
   let scoreDisplay: string;
   let badgeColor: { bg: string; text: string };
   
-  if (isVoicemailFinal) {
+  // If evaluated by our AI system, trust its outcome/score directly (skip pattern matching)
+  if (isOurEvaluation && structuredData?.successEvaluation) {
+    const successEval = structuredData.successEvaluation as Record<string, unknown>;
+    const aiScore = typeof successEval.score === 'number' ? successEval.score : null;
+    const aiOutcome = (successEval.outcome as string || '').toLowerCase();
+    
+    if (aiOutcome === 'voicemail') {
+      scoreDisplay = "V";
+      badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
+    } else if (aiOutcome === 'no_answer' || aiOutcome === 'wrong_number' || aiOutcome === 'busy') {
+      scoreDisplay = "F";
+      badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
+    } else if (aiScore !== null && aiScore <= 2) {
+      scoreDisplay = "HR";
+      badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
+    } else if (aiScore !== null && aiScore <= 6) {
+      scoreDisplay = "SR";
+      badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
+    } else if (aiScore !== null && aiScore >= 7) {
+      scoreDisplay = aiScore.toString();
+      badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
+    } else {
+      // Fallback for our evaluation without clear score
+      scoreDisplay = "F";
+      badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
+    }
+  } else if (isVoicemailFinal) {
     scoreDisplay = "V";
     badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
   } else if (isFailedCall) {
     scoreDisplay = "F";
     badgeColor = { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-700 dark:text-gray-300" };
   } else {
-    // Show score with new system: HR (1-2), SR (3-6), or score (7-10)
+    // Legacy: Show score with system: HR (1-2), SR (3-6), or score (7-10)
     const displayScore = effectiveScore || 5;
     
-    // New display system:
-    // 1-2: HR (Hard Reject) - Red
-    // 3-6: SR (Soft Reject) - Yellow
-    // 7-10: Show actual score - Green
     if (displayScore <= 2) {
       scoreDisplay = "HR";
       badgeColor = { bg: "bg-red-100 dark:bg-red-900/30", text: "text-red-700 dark:text-red-400" };
@@ -1526,7 +1655,6 @@ function CallRow({
       scoreDisplay = "SR";
       badgeColor = { bg: "bg-yellow-100 dark:bg-yellow-900/30", text: "text-yellow-700 dark:text-yellow-400" };
     } else {
-      // Positive (7-10) - show score in green
       scoreDisplay = displayScore.toString();
       badgeColor = { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400" };
     }
@@ -1544,6 +1672,9 @@ function CallRow({
     : call.sentiment;
   
   const validSummary = getValidEvaluationSummary(effectiveEvaluationSummary);
+  
+  // Get evaluation metadata (structuredData and evaluationSource already declared above)
+  const evaluatedAt = (structuredData as { evaluatedAt?: string } | undefined)?.evaluatedAt;
   
   // Generate actionable sales advice based on score
   const salesAdvice = getSalesAdvice(
@@ -1570,6 +1701,20 @@ function CallRow({
                 {callerDisplay.phone}
               </p>
               <div className="flex items-center gap-3 mt-2">
+                {call.transcript && (
+                  <button 
+                    onClick={handleReEvaluate}
+                    disabled={isReEvaluating}
+                    className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={currentLang === "tr" ? "Yeniden Değerlendir" : "Re-evaluate"}
+                  >
+                    {isReEvaluating ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
                 <span className="text-xs text-gray-500 dark:text-gray-400">
                   {format(new Date(call.created_at), "MMM d, HH:mm")}
                 </span>
@@ -1645,7 +1790,21 @@ function CallRow({
           </div>
           
           {/* Actions */}
-          <div className="w-20 flex items-center justify-end gap-2">
+          <div className="w-28 flex items-center justify-end gap-2">
+            {call.transcript && (
+              <button 
+                onClick={handleReEvaluate}
+                disabled={isReEvaluating}
+                className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={currentLang === "tr" ? "Yeniden Değerlendir" : "Re-evaluate"}
+              >
+                {isReEvaluating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-4 h-4" />
+                )}
+              </button>
+            )}
             {call.recording_url && (
               <button 
                 onClick={(e) => {
@@ -1684,7 +1843,18 @@ function CallRow({
             
             {/* AI Evaluation - Always show since we always have a score now */}
             <div>
-              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">{callLabels.callStatus[currentLang]}</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{callLabels.callStatus[currentLang]}</p>
+                {evaluatedAt && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {currentLang === "tr" ? "Değerlendirme: " : "Evaluated: "}
+                    {format(new Date(evaluatedAt), currentLang === "tr" ? "dd.MM.yyyy HH:mm" : "MMM d, HH:mm")}
+                    {evaluationSource === 'our_evaluation_only' && (
+                      <span className="ml-1 text-blue-500" title={currentLang === "tr" ? "Bizim sistem" : "Our system"}>✓</span>
+                    )}
+                  </p>
+                )}
+              </div>
               <div className="flex items-start gap-4">
                 {/* Status Display - V (voicemail), F (failed), or 1-10 score */}
                 <div className={cn(
@@ -1735,7 +1905,34 @@ function CallRow({
             {/* Transcript */}
             {call.transcript && (
               <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">{callLabels.transcript[currentLang]}</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{callLabels.transcript[currentLang]}</p>
+                  <div className="flex items-center gap-2">
+                    {evaluatedAt && (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {currentLang === "tr" ? "Son değerlendirme: " : "Last evaluated: "}
+                        {format(new Date(evaluatedAt), currentLang === "tr" ? "dd.MM.yyyy HH:mm" : "MMM d, HH:mm")}
+                      </span>
+                    )}
+                    <button
+                      onClick={handleReEvaluate}
+                      disabled={isReEvaluating}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isReEvaluating ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>{currentLang === "tr" ? "Değerlendiriliyor..." : "Evaluating..."}</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-3 h-3" />
+                          <span>{currentLang === "tr" ? "Yeniden Değerlendir" : "Re-evaluate"}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
                 <div className="text-sm text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
                   <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">{call.transcript}</pre>
                 </div>
@@ -1765,7 +1962,20 @@ export default function CallsPage() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
 
-  const loadCalls = useCallback(async () => {
+  // Update a specific call in the calls list
+  const handleCallUpdated = useCallback((callId: string, updatedCall: Call) => {
+    setCalls(prevCalls => {
+      const updatedCalls = prevCalls.map(c => c.id === callId ? updatedCall : c);
+      return updatedCalls;
+    });
+    setFilteredCalls(prevFiltered => {
+      const updatedFiltered = prevFiltered.map(c => c.id === callId ? updatedCall : c);
+      return updatedFiltered;
+    });
+    console.log(`[CallsPage] Updated call ${callId} in state`);
+  }, []);
+
+  const loadCalls = useCallback(async (forceRefresh = false) => {
     if (!user?.id) {
       setIsLoading(false);
       return;
@@ -1773,7 +1983,9 @@ export default function CallsPage() {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/dashboard/calls?days=365&userId=${user.id}`);
+      // Add timestamp to bypass cache if forceRefresh is true
+      const cacheBuster = forceRefresh ? `&_t=${Date.now()}` : '';
+      const response = await fetch(`/api/dashboard/calls?days=365&userId=${user.id}${cacheBuster}`);
       if (response.ok) {
         const data = await response.json();
         
@@ -1853,28 +2065,6 @@ export default function CallsPage() {
     }
   }, [user?.id]);
 
-  // Sync calls from Vapi in the background (returns true if new calls were synced)
-  const syncCallsFromVapi = useCallback(async (): Promise<boolean> => {
-    if (!user?.id) return false;
-    
-    try {
-      const syncResponse = await fetch(`/api/vapi/sync?days=14&userId=${user.id}`, {
-        method: 'POST',
-      });
-      
-      if (syncResponse.ok) {
-        const syncData = await syncResponse.json();
-        if (syncData.synced > 0) {
-          console.log(`Synced ${syncData.synced} new calls from Vapi`);
-          return true;
-        }
-      }
-    } catch (error) {
-      console.error("Error syncing from Vapi:", error);
-    }
-    return false;
-  }, [user?.id]);
-
   useEffect(() => {
     if (authLoading) {
       setIsLoading(true);
@@ -1882,22 +2072,13 @@ export default function CallsPage() {
     }
 
     if (user?.id) {
-      // Load cached calls immediately, then sync in background
-      loadCalls().then(() => {
-        // After showing cached data, sync from Vapi in background
-        syncCallsFromVapi().then((hasNewCalls) => {
-          if (hasNewCalls) {
-            // Reload to show new calls
-            loadCalls();
-          }
-        });
-      });
+      loadCalls();
     } else {
       setIsLoading(false);
       setCalls([]);
       setFilteredCalls([]);
     }
-  }, [user?.id, authLoading, loadCalls, syncCallsFromVapi]);
+  }, [user?.id, authLoading, loadCalls]);
 
   // Filter and sort calls
   useEffect(() => {
@@ -1947,16 +2128,9 @@ export default function CallsPage() {
 
   const handleRefresh = async () => {
     if (!user?.id) return;
-    
     setIsRefreshing(true);
     try {
-      // Sync from Vapi and reload
-      const hasNewCalls = await syncCallsFromVapi();
-        await loadCalls();
-      
-      if (hasNewCalls) {
-        console.log("New calls synced from Vapi");
-      }
+      await loadCalls(true);
     } catch (error) {
       console.error("Error during refresh:", error);
     } finally {
@@ -2146,7 +2320,8 @@ export default function CallsPage() {
                   setSelectedCall(call);
                   setIsPlayerOpen(true);
                 }}
-                onUpdate={loadCalls}
+                onUpdate={(forceRefresh?: boolean) => loadCalls(forceRefresh)}
+                onCallUpdated={handleCallUpdated}
               />
             ))}
                           </div>

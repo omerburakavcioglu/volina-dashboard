@@ -1,8 +1,144 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { getVapiCalls, transformVapiCallToLocal, isVapiConfigured } from "@/lib/vapi-api";
-import { parseVapiEvaluation } from "@/lib/vapi-evaluation-parser";
 import { cleanCallSummary } from "@/lib/utils";
+import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
+
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+
+// Helper function to create default evaluation when transcript/summary is not available
+function createDefaultEvaluation(endedReason?: string): {
+  score: number | null;
+  sentiment: "positive" | "neutral" | "negative";
+  outcome: string;
+  tags: string[];
+  summary: string | null;
+} {
+  if (!endedReason) {
+    return {
+      score: null,
+      sentiment: "neutral",
+      outcome: "needs_info",
+      tags: ["no_transcript"],
+      summary: "Arama tamamlandı ancak transkript mevcut değil.",
+    };
+  }
+
+  const reason = endedReason.toLowerCase();
+  
+  if (reason.includes("voicemail") || reason === "voicemail") {
+    return {
+      score: null,
+      sentiment: "negative",
+      outcome: "voicemail",
+      tags: ["voicemail", "failed_call"],
+      summary: "Sesli mesaja düştü",
+    };
+  }
+  
+  if (reason.includes("no-answer") || reason.includes("no_answer") || reason === "customer-did-not-answer") {
+    return {
+      score: 1,
+      sentiment: "negative",
+      outcome: "no_answer",
+      tags: ["no_answer", "failed_call"],
+      summary: "Cevap verilmedi",
+    };
+  }
+  
+  if (reason.includes("busy") || reason === "customer-busy") {
+    return {
+      score: 1,
+      sentiment: "negative",
+      outcome: "busy",
+      tags: ["busy", "failed_call"],
+      summary: "Müşteri meşgul",
+    };
+  }
+  
+  return {
+    score: null,
+    sentiment: "neutral",
+    outcome: "needs_info",
+    tags: ["no_transcript"],
+    summary: `Arama tamamlandı. Sebep: ${endedReason}`,
+  };
+}
+
+// Evaluate call with our own evaluation system
+async function evaluateCallWithStructuredOutput(
+  transcript: string,
+  existingSummary?: string | null,
+  endedReason?: string
+): Promise<{
+  successEvaluation: {
+    score: number;
+    sentiment: "positive" | "neutral" | "negative";
+    outcome: string;
+    tags: string[];
+    objections?: string[];
+    nextAction?: string;
+  };
+  callSummary: {
+    callSummary: string;
+  };
+}> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  const systemPrompt = EVALUATION_SYSTEM_PROMPT;
+
+  const userMessage = existingSummary 
+    ? `Arama Transkripti:\n${transcript}\n\nMevcut Özet:\n${existingSummary}${endedReason ? `\n\nEnded Reason: ${endedReason}` : ''}`
+    : `Arama Transkripti:\n${transcript}${endedReason ? `\n\nEnded Reason: ${endedReason}` : ''}`;
+
+  const response = await fetch(OPENAI_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.3,
+      max_tokens: 1000,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OpenAI API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("No response from OpenAI");
+  }
+
+  try {
+    const cleanedContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleanedContent);
+    
+    if (!parsed.successEvaluation || !parsed.callSummary) {
+      throw new Error("Invalid structured output format");
+    }
+    
+    return parsed;
+  } catch (error) {
+    console.error("Error parsing structured output:", error);
+    throw new Error(`Failed to parse structured output: ${error}`);
+  }
+}
 
 // POST - Sync VAPI calls to Supabase
 export async function POST(request: NextRequest) {
@@ -44,45 +180,76 @@ export async function POST(request: NextRequest) {
       const callIds = new Set<string>(); // Track unique call IDs to avoid duplicates
       
       // Fetch in 1-day chunks to avoid missing calls when there are more than 1000 in a period
+      let failedDays = 0;
       while (currentStart < endDate) {
         const chunkEnd = new Date(currentStart);
         chunkEnd.setDate(chunkEnd.getDate() + 1); // 1 day chunk
         if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
         
-        const batch = await getVapiCalls({
-          limit: 1000,
-          createdAtGe: currentStart.toISOString(),
-          createdAtLe: chunkEnd.toISOString(),
-          assistantId: userProfile?.vapi_assistant_id || undefined,
-        }, tenantApiKey);
-        
-        // Add only new calls (deduplicate)
-        for (const call of batch) {
-          if (!callIds.has(call.id)) {
-            callIds.add(call.id);
-            allCalls.push(call);
+        try {
+          const batch = await getVapiCalls({
+            limit: 1000,
+            createdAtGe: currentStart.toISOString(),
+            createdAtLe: chunkEnd.toISOString(),
+            assistantId: userProfile?.vapi_assistant_id || undefined,
+          }, tenantApiKey);
+          
+          // Add only new calls (deduplicate)
+          for (const call of batch) {
+            if (!callIds.has(call.id)) {
+              callIds.add(call.id);
+              allCalls.push(call);
+            }
+          }
+          
+          console.log(`[VAPI Sync] Fetched ${batch.length} calls from ${currentStart.toISOString().split('T')[0]} (total: ${allCalls.length})`);
+        } catch (dayError) {
+          failedDays++;
+          console.error(`[VAPI Sync] Failed to fetch calls for ${currentStart.toISOString().split('T')[0]}: ${dayError instanceof Error ? dayError.message : String(dayError)}`);
+          // Continue to next day instead of failing entire sync
+          if (failedDays >= days) {
+            // If ALL days failed, throw to trigger overall error
+            throw dayError;
           }
         }
-        
-        console.log(`[VAPI Sync] Fetched ${batch.length} calls from ${currentStart.toISOString().split('T')[0]} (total: ${allCalls.length})`);
         
         // Move to next day
         currentStart = new Date(chunkEnd);
         currentStart.setMilliseconds(currentStart.getMilliseconds() + 1);
+        
+        // Small delay between requests to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      if (failedDays > 0) {
+        console.log(`[VAPI Sync] Warning: ${failedDays} day(s) failed to fetch, continuing with ${allCalls.length} calls`);
       }
       
       vapiCalls = allCalls;
       console.log(`[VAPI Sync] Total unique calls fetched: ${vapiCalls.length}`);
     } catch (vapiError) {
-      console.error("Error fetching calls from VAPI:", vapiError);
+      console.error("[VAPI Sync] Error fetching calls from VAPI:", vapiError);
       const errorMessage = vapiError instanceof Error ? vapiError.message : String(vapiError);
       const errorStack = vapiError instanceof Error ? vapiError.stack : undefined;
+      
+      // If it's a VAPI API error (like 401, 403), return more specific error
+      if (vapiError instanceof Error && errorMessage.includes('401')) {
+        return NextResponse.json(
+          { 
+            success: false,
+            error: "VAPI API key is invalid or expired", 
+            details: errorMessage,
+          },
+          { status: 401 }
+        );
+      }
+      
       return NextResponse.json(
         { 
           success: false,
           error: "Failed to fetch calls from VAPI", 
           details: errorMessage,
-          stack: errorStack 
+          stack: process.env.NODE_ENV === 'development' ? errorStack : undefined
         },
         { status: 500 }
       );
@@ -115,9 +282,6 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Transform and insert
-      const localCall = transformVapiCallToLocal(vapiCall);
-      
       // Calculate duration in seconds
       let duration: number | null = null;
       if (vapiCall.startedAt && vapiCall.endedAt) {
@@ -184,18 +348,74 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Parse VAPI's success evaluation to get score, tags, and sentiment
-      const parsedEvaluation = parseVapiEvaluation(
-        vapiCall.analysis?.successEvaluation,
-        vapiCall.endedReason
-      );
-
       // Clean the summary from markdown formatting
       const rawSummary = vapiCall.analysis?.summary || vapiCall.summary || null;
       const cleanedSummary = cleanCallSummary(rawSummary);
+      
+      // Use our own evaluation system (same as webhook handler)
+      let parsedEvaluation: {
+        score: number | null;
+        sentiment: "positive" | "neutral" | "negative";
+        outcome: string;
+        tags: string[];
+        summary: string | null;
+        objections?: string[];
+        nextAction?: string;
+      };
+      let callSummaryFromStructured: string | null = null;
+      
+      const textToEvaluate = vapiCall.transcript || cleanedSummary || "";
+      
+      if (textToEvaluate) {
+        try {
+          console.log(`[VAPI Sync] Evaluating call ${vapiCall.id} with our system...`);
+          const structuredEvaluation = await evaluateCallWithStructuredOutput(
+            textToEvaluate,
+            cleanedSummary,
+            vapiCall.endedReason
+          );
+          
+          parsedEvaluation = {
+            score: structuredEvaluation.successEvaluation.score,
+            sentiment: structuredEvaluation.successEvaluation.sentiment,
+            outcome: structuredEvaluation.successEvaluation.outcome,
+            tags: structuredEvaluation.successEvaluation.tags || [],
+            objections: structuredEvaluation.successEvaluation.objections,
+            nextAction: structuredEvaluation.successEvaluation.nextAction,
+            summary: structuredEvaluation.callSummary.callSummary,
+          };
+          callSummaryFromStructured = structuredEvaluation.callSummary.callSummary;
+        } catch (error) {
+          console.error(`[VAPI Sync] Error evaluating call ${vapiCall.id}:`, error);
+          // Fallback to default evaluation
+          parsedEvaluation = createDefaultEvaluation(vapiCall.endedReason);
+          callSummaryFromStructured = null;
+        }
+      } else {
+        // No transcript/summary - use default evaluation
+        parsedEvaluation = createDefaultEvaluation(vapiCall.endedReason);
+        callSummaryFromStructured = null;
+      }
 
       // Get assistant_id from VAPI call
       const assistantId = vapiCall.assistantId || vapiCall.assistant?.id || null;
+
+      // Store our evaluation in structuredData (same format as webhook handler)
+      const ourStructuredData = {
+        successEvaluation: {
+          score: parsedEvaluation.score,
+          sentiment: parsedEvaluation.sentiment,
+          outcome: parsedEvaluation.outcome,
+          tags: parsedEvaluation.tags || [],
+          objections: parsedEvaluation.objections,
+          nextAction: parsedEvaluation.nextAction,
+        },
+        callSummary: {
+          callSummary: callSummaryFromStructured || parsedEvaluation.summary || null,
+        },
+        evaluationSource: "our_evaluation_only",
+        evaluatedAt: new Date().toISOString(),
+      };
 
       const insertData: Record<string, unknown> = {
         user_id: userId,
@@ -203,14 +423,14 @@ export async function POST(request: NextRequest) {
         assistant_id: assistantId,
         recording_url: vapiCall.recordingUrl || vapiCall.stereoRecordingUrl || null,
         transcript: vapiCall.transcript || null,
-        summary: cleanedSummary,
-        sentiment: parsedEvaluation.sentiment || localCall.sentiment,
+        summary: callSummaryFromStructured || cleanedSummary,
+        sentiment: parsedEvaluation.sentiment,
         duration,
-        type: localCall.type,
+        type: vapiCall.type || 'outbound',
         caller_phone: vapiCall.customer?.number || null,
         caller_name: callerName,
         evaluation_score: parsedEvaluation.score,
-        evaluation_summary: parsedEvaluation.summary || vapiCall.analysis?.successEvaluation || null,
+        evaluation_summary: parsedEvaluation.nextAction || null,
         created_at: originalTimestamp, // Use original VAPI call time
         metadata: {
           orgId: vapiCall.orgId,
@@ -220,6 +440,7 @@ export async function POST(request: NextRequest) {
           callType: vapiCall.type,
           originalStartedAt: vapiCall.startedAt,
           originalEndedAt: vapiCall.endedAt,
+          structuredData: ourStructuredData,
           tags: parsedEvaluation.tags,
           assistantId: assistantId, // Also store in metadata for filtering
         },
@@ -256,15 +477,23 @@ export async function POST(request: NextRequest) {
       total: vapiCalls.length,
     });
   } catch (error) {
-    console.error("VAPI sync error:", error);
+    console.error("[VAPI Sync] Fatal error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    // Log full error for debugging
+    if (error instanceof Error) {
+      console.error("[VAPI Sync] Error name:", error.name);
+      console.error("[VAPI Sync] Error message:", error.message);
+      console.error("[VAPI Sync] Error stack:", error.stack);
+    }
+    
     return NextResponse.json(
       { 
         success: false,
         error: "Failed to sync VAPI calls", 
         details: errorMessage,
-        stack: errorStack 
+        stack: process.env.NODE_ENV === 'development' ? errorStack : undefined
       },
       { status: 500 }
     );

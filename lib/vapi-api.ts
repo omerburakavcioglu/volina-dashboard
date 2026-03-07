@@ -14,30 +14,58 @@ function getVapiApiKey(): string {
   return apiKey;
 }
 
-// Generic fetch helper with authentication
+// Generic fetch helper with authentication and retry logic
 // Accepts optional overrideApiKey to support per-tenant VAPI accounts
 async function vapiRequest<T>(
   endpoint: string,
   options: RequestInit = {},
-  overrideApiKey?: string
+  overrideApiKey?: string,
+  maxRetries: number = 3
 ): Promise<T> {
   const apiKey = overrideApiKey || getVapiApiKey();
   
-  const response = await fetch(`${VAPI_API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      
+      const response = await fetch(`${VAPI_API_BASE_URL}${endpoint}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+      
+      clearTimeout(timeoutId);
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`VAPI API Error: ${response.status} - ${error}`);
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`VAPI API Error: ${response.status} - ${error}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Don't retry on auth errors (401, 403)
+      if (lastError.message.includes('401') || lastError.message.includes('403')) {
+        throw lastError;
+      }
+      
+      if (attempt < maxRetries) {
+        const delay = attempt * 2000; // 2s, 4s, 6s
+        console.log(`[VAPI API] Request failed (attempt ${attempt}/${maxRetries}), retrying in ${delay/1000}s... Error: ${lastError.message}`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
-
-  return response.json();
+  
+  throw lastError || new Error('VAPI API request failed after retries');
 }
 
 // ===========================================

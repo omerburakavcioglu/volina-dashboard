@@ -157,11 +157,21 @@ export async function POST(request: NextRequest) {
 
     // Evaluate the call with structured output format
     const textToEvaluate = call.transcript || call.summary || "";
+    console.log(`[Re-evaluate] Evaluating call ${callId}`);
+    console.log(`[Re-evaluate] Transcript length: ${textToEvaluate.length}`);
+    console.log(`[Re-evaluate] Transcript preview: ${textToEvaluate.substring(0, 200)}...`);
+    
     const structuredEvaluation = await evaluateCallWithStructuredOutput(
       textToEvaluate,
       call.summary,
       endedReason
     );
+    
+    console.log(`[Re-evaluate] Evaluation result:`, {
+      score: structuredEvaluation.successEvaluation.score,
+      outcome: structuredEvaluation.successEvaluation.outcome,
+      sentiment: structuredEvaluation.successEvaluation.sentiment,
+    });
 
     // Update metadata with structured output
     const updatedMetadata = {
@@ -203,10 +213,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log(`[Re-evaluate] Successfully updated call ${callId} with score ${structuredEvaluation.successEvaluation.score}`);
+    
     return NextResponse.json({
       success: true,
       message: "Call re-evaluated with structured output format",
       evaluation: structuredEvaluation,
+      newScore: structuredEvaluation.successEvaluation.score,
+      newOutcome: structuredEvaluation.successEvaluation.outcome,
     });
   } catch (error) {
     console.error("Structured re-evaluation error:", error);

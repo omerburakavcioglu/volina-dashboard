@@ -1044,10 +1044,40 @@ export function extractUserText(transcript: string): { userTextRaw: string; user
 // ---------------------------------------------------------------------------
 
 export function computeCallScore(call: CallScoringInput): CallScoreResult {
+  const callMetadata = (call.metadata || {}) as Record<string, unknown>;
+  
+  // --- FAST PATH: If evaluated by our AI system, trust the evaluation directly ---
+  const structuredData = callMetadata.structuredData as Record<string, unknown> | undefined;
+  const evaluationSource = structuredData?.evaluationSource as string | undefined;
+  
+  if (evaluationSource === 'our_evaluation_only' && structuredData?.successEvaluation) {
+    const successEval = structuredData.successEvaluation as Record<string, unknown>;
+    const aiScore = typeof successEval.score === 'number' ? successEval.score : null;
+    const aiOutcome = (successEval.outcome as string || '').toLowerCase();
+    
+    // Determine display based on AI outcome
+    if (aiOutcome === 'voicemail') {
+      return { display: "V", numericScore: null };
+    }
+    if (aiOutcome === 'no_answer' || aiOutcome === 'wrong_number' || aiOutcome === 'busy') {
+      return { display: "F", numericScore: null };
+    }
+    if (aiScore !== null && aiScore >= 1 && aiScore <= 10) {
+      return { display: aiScore.toString(), numericScore: aiScore };
+    }
+    // Fallback: if score is null but outcome exists
+    if (aiOutcome === 'hard_reject') {
+      return { display: "2", numericScore: 2 };
+    }
+    if (aiOutcome === 'soft_reject') {
+      return { display: "4", numericScore: 4 };
+    }
+  }
+  
+  // --- LEGACY PATH: Pattern-based scoring for calls not evaluated by our AI ---
   const transcript = (call.transcript || '').toLowerCase();
   const callSummary = (call.summary || '').toLowerCase();
   const evalSummary = (call.evaluation_summary || '').toLowerCase();
-  const callMetadata = (call.metadata || {}) as Record<string, unknown>;
   const endedReason = (callMetadata.endedReason as string || '').toLowerCase();
 
   // Extract user text from transcript
