@@ -119,6 +119,20 @@ export async function transitionFunnelLead(
 
   if (!currentLead) return false;
 
+  const { data: leadRecord } = await (supabase as any)
+    .from("leads")
+    .select("phone, full_name, email, language")
+    .eq("id", currentLead.lead_id)
+    .single();
+
+  const leadPayload = {
+    lead_id: currentLead.lead_id,
+    lead_name: leadRecord?.full_name || "Unknown",
+    lead_phone: leadRecord?.phone || "",
+    lead_email: leadRecord?.email || "",
+    lead_language: leadRecord?.language || "en",
+  };
+
   await (supabase as any)
     .from("funnel_schedules")
     .update({ status: "cancelled" })
@@ -173,7 +187,7 @@ export async function transitionFunnelLead(
       scheduled_at: scheduledAt,
       lead_timezone: leadTz,
       status: "pending",
-      payload: {},
+      payload: { ...leadPayload, stage_name: nextStageName },
     });
   }
 

@@ -135,6 +135,8 @@ export async function GET(request: NextRequest) {
           created_at: profile.created_at,
           vapi_assistant_id: profile.vapi_assistant_id || null,
           vapi_phone_number_id: profile.vapi_phone_number_id || null,
+          whatsapp_phone_number_id: profile.whatsapp_phone_number_id || null,
+          whatsapp_access_token: profile.whatsapp_access_token ? "••••••" : null,
           metrics: {
             total_leads: totalLeads || 0,
             new_leads: newLeads || 0,

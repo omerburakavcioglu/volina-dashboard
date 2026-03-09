@@ -29,6 +29,7 @@ export async function PATCH(request: NextRequest) {
     // Whitelist of updatable fields
     const allowedFields = [
       "vapi_assistant_id", "vapi_phone_number_id", "vapi_org_id", "vapi_private_key",
+      "whatsapp_phone_number_id", "whatsapp_access_token",
       "company_name", "full_name", "dashboard_type",
     ];
     const safeUpdates: Record<string, unknown> = {};

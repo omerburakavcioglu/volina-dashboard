@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/funnel",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/campaigns",
+      "schedule": "* * * * *"
+    }
+  ]
+}

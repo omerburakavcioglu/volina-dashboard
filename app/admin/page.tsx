@@ -61,6 +61,8 @@ interface ClientData {
   created_at: string;
   vapi_assistant_id: string | null;
   vapi_phone_number_id: string | null;
+  whatsapp_phone_number_id: string | null;
+  whatsapp_access_token: string | null;
   metrics: ClientMetrics;
 }
 
@@ -76,6 +78,8 @@ export default function AdminDashboard() {
   const [vapiAssistantId, setVapiAssistantId] = useState("");
   const [vapiPhoneNumberId, setVapiPhoneNumberId] = useState("");
   const [vapiPrivateKey, setVapiPrivateKey] = useState("");
+  const [waPhoneNumberId, setWaPhoneNumberId] = useState("");
+  const [waAccessToken, setWaAccessToken] = useState("");
 
   const loadClients = useCallback(async () => {
     if (!user?.id) return;
@@ -106,7 +110,9 @@ export default function AdminDashboard() {
     setEditingClient(client);
     setVapiAssistantId(client.vapi_assistant_id || "");
     setVapiPhoneNumberId(client.vapi_phone_number_id || "");
-    setVapiPrivateKey(""); // Never show existing key; leave blank or enter new one
+    setVapiPrivateKey("");
+    setWaPhoneNumberId(client.whatsapp_phone_number_id || "");
+    setWaAccessToken("");
     setShowSettingsDialog(true);
   };
 
@@ -124,6 +130,8 @@ export default function AdminDashboard() {
             vapi_assistant_id: vapiAssistantId || null,
             vapi_phone_number_id: vapiPhoneNumberId || null,
             vapi_private_key: vapiPrivateKey.trim() || null,
+            whatsapp_phone_number_id: waPhoneNumberId || null,
+            whatsapp_access_token: waAccessToken.trim() || null,
           },
         }),
       });
@@ -406,20 +414,21 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* VAPI Settings Dialog */}
+      {/* Integration Settings Dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings className="w-5 h-5" />
-              VAPI Settings
+              Integration Settings
             </DialogTitle>
             <DialogDescription>
-              Configure VAPI assistant and phone number for{" "}
+              Configure VAPI and WhatsApp for{" "}
               <span className="font-semibold">{editingClient?.company_name || editingClient?.email}</span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">VAPI (Voice AI)</p>
             <div>
               <Label>VAPI Assistant ID</Label>
               <Input
@@ -450,7 +459,32 @@ export default function AdminDashboard() {
                 className="font-mono text-sm"
                 autoComplete="off"
               />
-              <p className="text-xs text-gray-500 mt-1">Bu müşteri farklı bir VAPI hesabı kullanıyorsa API key buraya yapıştırın. Boş bırakırsanız varsayılan VAPI hesabı kullanılır.</p>
+              <p className="text-xs text-gray-500 mt-1">Farklı VAPI hesabı için API key. Boş bırakırsanız varsayılan kullanılır.</p>
+            </div>
+
+            <hr className="border-gray-200 dark:border-gray-700" />
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">WhatsApp (Meta Cloud API)</p>
+            <div>
+              <Label>WhatsApp Phone Number ID</Label>
+              <Input
+                value={waPhoneNumberId}
+                onChange={(e) => setWaPhoneNumberId(e.target.value)}
+                placeholder="e.g., 123456789012345"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">Meta Business Suite &gt; WhatsApp &gt; Phone Number ID</p>
+            </div>
+            <div>
+              <Label>WhatsApp Access Token</Label>
+              <Input
+                type="password"
+                value={waAccessToken}
+                onChange={(e) => setWaAccessToken(e.target.value)}
+                placeholder="Boş bırak = mevcut token korunur"
+                className="font-mono text-sm"
+                autoComplete="off"
+              />
+              <p className="text-xs text-gray-500 mt-1">Meta Graph API erişim tokeni. Boş bırakırsanız mevcut değer korunur.</p>
             </div>
           </div>
           <DialogFooter>

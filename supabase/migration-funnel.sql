@@ -367,3 +367,9 @@ BEGIN
 
 END;
 $$ LANGUAGE plpgsql;
+
+-- =============================================
+-- WhatsApp credentials on profiles (for funnel)
+-- =============================================
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id TEXT;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;

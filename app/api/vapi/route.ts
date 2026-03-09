@@ -821,6 +821,25 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
           },
           actor: "ai_agent",
         });
+
+        // Mark the funnel schedule as completed (cron left it as "processing")
+        const funnelScheduleId = call.metadata?.schedule_id;
+        if (funnelScheduleId) {
+          await (supabase as any)
+            .from("funnel_schedules")
+            .update({ status: "completed", executed_at: new Date().toISOString() })
+            .eq("id", funnelScheduleId)
+            .eq("status", "processing");
+          console.log(`[funnel] Marked schedule ${funnelScheduleId} as completed`);
+        } else if (call.metadata?.source === "funnel") {
+          // Fallback: find the processing schedule for this funnel lead
+          await (supabase as any)
+            .from("funnel_schedules")
+            .update({ status: "completed", executed_at: new Date().toISOString() })
+            .eq("funnel_lead_id", fl.id)
+            .eq("status", "processing")
+            .in("action_type", ["ai_call", "satisfaction_call", "check_in_call"]);
+        }
       }
     } catch (funnelError) {
       console.error("[funnel] Error processing funnel transition:", funnelError);
