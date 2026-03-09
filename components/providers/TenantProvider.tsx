@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, ReactNode, useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAuth } from "./SupabaseProvider";
 import type { Profile } from "@/lib/types";
 
@@ -16,6 +16,7 @@ const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const params = useParams();
+  const pathname = usePathname();
   const router = useRouter();
   const { user, session, isAuthenticated, isLoading: authLoading } = useAuth();
   
@@ -24,10 +25,17 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   
   const tenant = params?.tenant as string | undefined;
   
+  const isPublicRoute = pathname?.endsWith("/mockfunnel") ?? false;
+  
   // Check if current user owns this tenant
   const isOwner = user?.slug === tenant;
   
   useEffect(() => {
+    if (isPublicRoute) {
+      setHasCheckedAuth(true);
+      return;
+    }
+
     // Wait for auth to fully load before making any redirect decisions
     if (authLoading) return;
     
@@ -56,7 +64,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     }, 100);
     
     return () => clearTimeout(timer);
-  }, [authLoading, session, user, tenant, router]);
+  }, [authLoading, session, user, tenant, router, isPublicRoute]);
 
   return (
     <TenantContext.Provider
