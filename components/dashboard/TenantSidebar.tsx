@@ -18,6 +18,7 @@ import {
   Sun,
   Target,
   Globe,
+  Filter,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useLanguage, useTranslation } from "@/lib/i18n";
@@ -40,9 +41,12 @@ export function TenantSidebar() {
   const dashboardType = tenantProfile?.dashboard_type || user?.dashboard_type || 'outbound';
 
   // Navigation items - clean and minimal with translations
+  // Funnel is hidden for admin (Volina internal); only client tenants see it
+  const isAdmin = user?.slug === "admin";
   const navItems = [
     { href: `/${effectiveTenant}`, icon: LayoutDashboard, label: t("dashboard") },
     { href: `/${effectiveTenant}/leads`, icon: Users, label: t("leads") },
+    ...(isAdmin ? [] : [{ href: `/${effectiveTenant}/funnel`, icon: Filter, label: t("funnel") }]),
     { href: `/${effectiveTenant}/calls`, icon: Phone, label: t("calls") },
     { href: `/${effectiveTenant}/campaigns`, icon: Target, label: t("campaigns") },
   ];

@@ -25,6 +25,7 @@ export const translations = {
   sidebar: {
     dashboard: { en: "Dashboard", tr: "Panel" },
     leads: { en: "Leads", tr: "Müşteri Adayları" },
+    funnel: { en: "Funnel", tr: "Huni" },
     calls: { en: "Calls", tr: "Aramalar" },
     campaigns: { en: "Campaigns", tr: "Kampanyalar" },
     settings: { en: "Settings", tr: "Ayarlar" },
@@ -114,6 +115,31 @@ export const translations = {
     noLeads: { en: "No leads found", tr: "Müşteri adayı bulunamadı" },
   },
   
+  // Funnel
+  funnel: {
+    subtitle: { en: "Automate your lead follow-up", tr: "Müşteri takibinizi otomatikleştirin" },
+    startFunnel: { en: "Start Funnel", tr: "Huniyi Başlat" },
+    pauseAll: { en: "Pause All", tr: "Tümünü Durdur" },
+    resume: { en: "Resume", tr: "Devam Et" },
+    running: { en: "Running", tr: "Çalışıyor" },
+    paused: { en: "Paused", tr: "Duraklatıldı" },
+    notStarted: { en: "Not Started", tr: "Başlamadı" },
+    stageNew: { en: "New", tr: "Yeni" },
+    stageContacting: { en: "Contacting", tr: "İletişimde" },
+    stageNurturing: { en: "Nurturing", tr: "Takipte" },
+    stageReady: { en: "Ready", tr: "Hazır" },
+    stageInTreatment: { en: "In Treatment", tr: "Tedavide" },
+    stageLoyal: { en: "Loyal", tr: "Sadık" },
+    activeLeads: { en: "Active Leads", tr: "Aktif Adaylar" },
+    callsToday: { en: "Calls Today", tr: "Bugünkü Aramalar" },
+    responses: { en: "Responses", tr: "Yanıtlar" },
+    conversions: { en: "Conversions", tr: "Dönüşümler" },
+    activityFeed: { en: "Activity Feed", tr: "Aktivite Akışı" },
+    performance: { en: "Performance", tr: "Performans" },
+    automationFlow: { en: "Automation Flow", tr: "Otomasyon Akışı" },
+    dashboard: { en: "Dashboard", tr: "Panel" },
+  },
+
   // Campaigns
   campaigns: {
     title: { en: "Campaigns", tr: "Kampanyalar" },

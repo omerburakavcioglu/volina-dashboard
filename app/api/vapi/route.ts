@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { cleanCallSummary } from "@/lib/utils";
 import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
+import { transitionFunnelLead, mapCallResultToFunnelCondition } from "@/lib/funnel-engine";
 
 interface ParsedEvaluation {
   score: number | null;
@@ -714,6 +715,115 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       console.log("Duration:", duration);
       console.log("Sentiment:", sentiment);
       console.log("==========================================");
+    }
+  }
+
+  // =============================================
+  // FUNNEL INTEGRATION: check if lead is in funnel and transition
+  // =============================================
+  if (userId && leadId) {
+    try {
+      const { data: funnelLead } = await (supabase as any)
+        .from("funnel_leads")
+        .select("id, current_stage_id, branch, metadata, user_id, funnel_stages!inner(name)")
+        .eq("lead_id", leadId)
+        .eq("status", "active")
+        .single();
+
+      if (funnelLead) {
+        const fl = funnelLead as {
+          id: string;
+          current_stage_id: string;
+          branch: string | null;
+          metadata: Record<string, unknown>;
+          user_id: string;
+          funnel_stages: { name: string };
+        };
+
+        const currentStageName = fl.funnel_stages.name;
+        const funnelCondition = mapCallResultToFunnelCondition(
+          call.endedReason || "",
+          parsedEvaluation.outcome,
+          evaluationScore
+        );
+
+        // Get config for calling hours
+        const { data: funnelConfig } = await (supabase as any)
+          .from("funnel_config")
+          .select("calling_hours_start, calling_hours_end")
+          .eq("user_id", fl.user_id)
+          .single();
+
+        const chStart = (funnelConfig as { calling_hours_start: string } | null)?.calling_hours_start || "09:00";
+        const chEnd = (funnelConfig as { calling_hours_end: string } | null)?.calling_hours_end || "20:00";
+
+        let nextStageName: string | null = null;
+        let nextBranch: string | null = fl.branch;
+
+        if (currentStageName === "DAY0_AI_CALL") {
+          if (funnelCondition === "call_result_hard") {
+            nextStageName = "HARD_WAITING";
+            nextBranch = "hard";
+          } else if (funnelCondition === "call_result_soft") {
+            nextStageName = "SOFT_FOLLOWUP";
+            nextBranch = "soft";
+          } else {
+            nextStageName = "NO_ANSWER_WHATSAPP_INTRO";
+            nextBranch = "no_answer";
+          }
+        } else if (currentStageName === "HARD_REACQUISITION_CALL") {
+          if (funnelCondition === "call_result_soft") {
+            nextStageName = "LIVE_TRANSFER";
+            nextBranch = "main";
+          } else if (funnelCondition === "call_result_no_answer") {
+            nextStageName = null; // will retry via scheduler
+          } else {
+            nextStageName = "ARCHIVE_GDPR";
+            nextBranch = null;
+          }
+        } else if (currentStageName === "POST_TREATMENT_DAY7") {
+          if (funnelCondition === "call_result_soft") {
+            nextStageName = "REVIEW_AND_REFERRAL";
+            nextBranch = "post_treatment";
+          } else {
+            nextStageName = "URGENT_ALERT";
+            nextBranch = "post_treatment";
+          }
+        } else if (currentStageName === "POST_TREATMENT_DAY30") {
+          nextStageName = "RECOVERY_MANAGEMENT";
+          nextBranch = "post_treatment";
+        }
+
+        if (nextStageName) {
+          await transitionFunnelLead(
+            supabase,
+            fl.id,
+            fl.user_id,
+            nextStageName,
+            nextBranch,
+            chStart,
+            chEnd
+          );
+          console.log(`[funnel] Transitioned lead ${leadId} from ${currentStageName} to ${nextStageName}`);
+        }
+
+        // Log call result event
+        await (supabase as any).from("funnel_events").insert({
+          user_id: fl.user_id,
+          funnel_lead_id: fl.id,
+          event_type: "call_result",
+          from_stage_id: fl.current_stage_id,
+          payload: {
+            call_id: call.id,
+            duration,
+            result: funnelCondition,
+            evaluation_score: evaluationScore,
+          },
+          actor: "ai_agent",
+        });
+      }
+    } catch (funnelError) {
+      console.error("[funnel] Error processing funnel transition:", funnelError);
     }
   }
 

@@ -16,10 +16,8 @@ const nextConfig = {
     optimizePackageImports: ["lucide-react", "recharts"],
   },
   typescript: {
-    // Strict type checking for Vercel builds
     ignoreBuildErrors: false,
   },
 };
 
 export default nextConfig;
-
