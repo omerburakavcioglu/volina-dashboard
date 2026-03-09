@@ -74,9 +74,19 @@ function buildPath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
 }
 
-export default function FunnelAdvancedFlow() {
+interface FunnelAdvancedFlowProps {
+  /** When provided, use these instead of fetching (e.g. mock demo). */
+  mockStages?: FunnelStageWithCount[];
+  mockTransitions?: FunnelTransition[];
+}
+
+export default function FunnelAdvancedFlow({ mockStages, mockTransitions }: FunnelAdvancedFlowProps = {}) {
   const { user } = useAuth();
-  const { stages, transitions, isLoading } = useFunnelAdvancedStages(user?.id || null);
+  const fetched = useFunnelAdvancedStages(user?.id || null);
+  const useMock = mockStages != null && mockTransitions != null;
+  const stages = useMock ? mockStages : fetched.stages;
+  const transitions = useMock ? mockTransitions : fetched.transitions;
+  const isLoading = useMock ? false : fetched.isLoading;
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const NODE_W = 180;
@@ -146,23 +156,6 @@ export default function FunnelAdvancedFlow() {
           </div>
         ))}
       </div>
-
-      {/* Tooltip */}
-      {hoveredStage && (
-        <div className="mb-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-          <p className="text-sm font-medium text-gray-900 dark:text-white">
-            {hoveredStage.display_name}
-          </p>
-          {hoveredStage.description && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              {hoveredStage.description}
-            </p>
-          )}
-          <p className="text-xs text-gray-400 mt-1">
-            {hoveredStage.lead_count} leads &middot; {hoveredStage.stage_type} &middot; {hoveredStage.branch || "—"}
-          </p>
-        </div>
-      )}
 
       {/* SVG Flow */}
       <div className="overflow-x-auto">
@@ -293,6 +286,23 @@ export default function FunnelAdvancedFlow() {
           })}
         </svg>
       </div>
+
+      {/* Info card below flowchart so it doesn't shift the diagram */}
+      {hoveredStage && (
+        <div className="mt-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+          <p className="text-sm font-medium text-gray-900 dark:text-white">
+            {hoveredStage.display_name}
+          </p>
+          {hoveredStage.description && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {hoveredStage.description}
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-1">
+            {hoveredStage.lead_count} leads &middot; {hoveredStage.stage_type} &middot; {hoveredStage.branch || "—"}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

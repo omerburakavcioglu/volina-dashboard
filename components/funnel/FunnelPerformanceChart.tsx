@@ -12,11 +12,7 @@ import {
   Legend,
 } from "recharts";
 
-interface FunnelPerformanceChartProps {
-  userId: string | null;
-}
-
-interface DailyPoint {
+export interface DailyPoint {
   date: string;
   entered: number;
   calls: number;
@@ -24,11 +20,22 @@ interface DailyPoint {
   conversions: number;
 }
 
-export default function FunnelPerformanceChart({ userId }: FunnelPerformanceChartProps) {
-  const [data, setData] = useState<DailyPoint[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+interface FunnelPerformanceChartProps {
+  userId: string | null;
+  /** When provided, use this data instead of fetching (e.g. mock demo). */
+  mockData?: DailyPoint[];
+}
+
+export default function FunnelPerformanceChart({ userId, mockData }: FunnelPerformanceChartProps) {
+  const [data, setData] = useState<DailyPoint[]>(mockData ?? []);
+  const [isLoading, setIsLoading] = useState(!mockData);
 
   const fetchData = useCallback(async () => {
+    if (mockData) {
+      setData(mockData);
+      setIsLoading(false);
+      return;
+    }
     if (!userId) return;
     setIsLoading(true);
     try {
@@ -67,7 +74,7 @@ export default function FunnelPerformanceChart({ userId }: FunnelPerformanceChar
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, [userId, mockData]);
 
   useEffect(() => {
     fetchData();

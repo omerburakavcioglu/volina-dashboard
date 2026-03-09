@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X, Search, Phone, Mail, Clock, ChevronRight } from "lucide-react";
 import { useFunnelLeadsByStage } from "@/hooks/useFunnel";
-import type { SimpleStage } from "@/lib/types-funnel";
+import type { SimpleStage, FunnelLeadWithInfo } from "@/lib/types-funnel";
 
 const STAGE_LABELS: Record<string, string> = {
   new: "New",
@@ -18,6 +18,9 @@ interface FunnelLeadListProps {
   userId: string;
   stage: SimpleStage;
   onClose: () => void;
+  /** When provided, use these instead of fetching (e.g. mock demo). */
+  overrideLeads?: FunnelLeadWithInfo[];
+  overrideTotal?: number;
 }
 
 function timeAgo(dateStr: string): string {
@@ -29,10 +32,14 @@ function timeAgo(dateStr: string): string {
   return `${days}d`;
 }
 
-export default function FunnelLeadList({ userId, stage, onClose }: FunnelLeadListProps) {
+export default function FunnelLeadList({ userId, stage, onClose, overrideLeads, overrideTotal }: FunnelLeadListProps) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const { leads, total, isLoading } = useFunnelLeadsByStage(userId, stage, page, 30, search);
+  const fetched = useFunnelLeadsByStage(userId, stage, page, 30, search);
+  const useOverride = overrideLeads != null && overrideTotal != null;
+  const leads = useOverride ? overrideLeads : fetched.leads;
+  const total = useOverride ? overrideTotal : fetched.total;
+  const isLoading = useOverride ? false : fetched.isLoading;
 
   const totalPages = Math.ceil(total / 30);
 
