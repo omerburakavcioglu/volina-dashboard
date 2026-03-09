@@ -442,7 +442,7 @@ export default function LeadsPage() {
                   type="email"
                   value={newLead.email}
                   onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
-                  placeholder="jack@example.com"
+                  placeholder="john@example.com"
                 />
               </div>
               
