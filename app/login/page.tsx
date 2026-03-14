@@ -140,7 +140,7 @@ function LoginContent() {
         >
           <LayoutDashboard className="w-4 h-4" />
           <span className="hidden sm:inline">Try Dashboard</span>
-          <span className="sm:hidden">Try</span>
+                  <span className="sm:hidden">Mock</span>
         </Button>
 
         <div className="max-w-md w-full mx-auto">
