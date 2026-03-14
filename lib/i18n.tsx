@@ -37,10 +37,28 @@ export const translations = {
   
   // Calls Page
   calls: {
-    title: { en: "Calls", tr: "Aramalar" },
-    subtitle: { en: "View and manage your call history", tr: "Arama geçmişinizi görüntüleyin ve yönetin" },
-    searchPlaceholder: { en: "Search calls...", tr: "Aramalarda ara..." },
+    title: { en: "Call Logs", tr: "Arama Kayıtları" },
+    subtitle: { en: "View and analyze all voice interactions handled by Volina AI.", tr: "Volina AI tarafından işlenen tüm ses etkileşimlerini görüntüleyin ve analiz edin." },
+    mockPreview: { en: "Mock Dashboard Preview - View and analyze all voice interactions handled by Volina AI.", tr: "Mock Dashboard Önizlemesi - Volina AI tarafından işlenen tüm ses etkileşimlerini görüntüleyin ve analiz edin." },
+    searchPlaceholder: { en: "Search by transcript, summary, or phone...", tr: "Transkript, özet veya telefon ile ara..." },
     noCalls: { en: "No calls found", tr: "Arama bulunamadı" },
+    noCallsYet: { en: "No calls yet", tr: "Henüz arama yok" },
+    noMatchingCalls: { en: "No matching calls", tr: "Eşleşen arama yok" },
+    callsDescription: { en: "Your AI voice agent hasn't handled any calls yet. They'll appear here once calls are made.", tr: "AI ses asistanınız henüz hiç arama işlemedi. Aramalar yapıldığında burada görünecekler." },
+    tryAdjustingFilters: { en: "Try adjusting your search or filters to find what you're looking for.", tr: "Aradığınızı bulmak için arama veya filtrelerinizi ayarlamayı deneyin." },
+    totalCalls: { en: "Total Calls", tr: "Toplam Arama" },
+    appointments: { en: "Appointments", tr: "Randevular" },
+    positive: { en: "Positive", tr: "Pozitif" },
+    avgDuration: { en: "Avg Duration", tr: "Ort. Süre" },
+    filters: { en: "Filters", tr: "Filtreler" },
+    activeFilters: { en: "Active filters:", tr: "Aktif filtreler:" },
+    clearAll: { en: "Clear all", tr: "Tümünü temizle" },
+    export: { en: "Export", tr: "Dışa Aktar" },
+    exported: { en: "Exported!", tr: "Dışa aktarıldı!" },
+    filterCalls: { en: "Filter Calls", tr: "Aramaları Filtrele" },
+    callType: { en: "Call Type", tr: "Arama Türü" },
+    sentiment: { en: "Sentiment", tr: "Duygu" },
+    applyFilters: { en: "Apply Filters", tr: "Filtreleri Uygula" },
     
     // Stats
     allCalls: { en: "All", tr: "Tümü" },
@@ -93,6 +111,9 @@ export const translations = {
   // Dashboard
   dashboard: {
     title: { en: "Dashboard", tr: "Panel" },
+    welcomeBack: { en: "Welcome back", tr: "Tekrar hoş geldiniz" },
+    subtitle: { en: "Here's your AI voice agent overview.", tr: "İşte AI ses asistanınızın genel bakışı." },
+    mockPreview: { en: "Mock Dashboard Preview - This is a preview of what you'll see after logging in.", tr: "Mock Dashboard Önizlemesi - Bu, giriş yaptığınızda göreceğiniz dashboard'un bir önizlemesidir." },
     totalCalls: { en: "Total Calls", tr: "Toplam Arama" },
     todayCalls: { en: "Today's Calls", tr: "Bugünkü Aramalar" },
     thisMonth: { en: "This Month", tr: "Bu Ay" },
@@ -100,6 +121,34 @@ export const translations = {
     conversionRate: { en: "Conversion Rate", tr: "Dönüşüm Oranı" },
     recentCalls: { en: "Recent Calls", tr: "Son Aramalar" },
     topLeads: { en: "Top Leads", tr: "En İyi Adaylar" },
+    monthlyCalls: { en: "Monthly Calls", tr: "Aylık Aramalar" },
+    dailyCalls: { en: "Daily Calls", tr: "Günlük Aramalar" },
+    aiPerformance: { en: "AI Performance", tr: "AI Performansı" },
+    callCompletionRate: { en: "Call Completion Rate", tr: "Arama Tamamlama Oranı" },
+    appointmentConversion: { en: "Appointment Conversion", tr: "Randevu Dönüşümü" },
+    customerSatisfaction: { en: "Customer Satisfaction", tr: "Müşteri Memnuniyeti" },
+    aboveAverage: { en: "Your AI is performing above average compared to similar businesses.", tr: "AI'nız benzer işletmelere kıyasla ortalamanın üzerinde performans gösteriyor." },
+    startMakingCalls: { en: "Start making calls to see your AI performance metrics.", tr: "AI performans metriklerinizi görmek için aramalar yapmaya başlayın." },
+    liveFromVapi: { en: "Live from VAPI", tr: "VAPI'den Canlı" },
+    fromDatabase: { en: "From Database", tr: "Veritabanından" },
+    mockData: { en: "Mock Data", tr: "Mock Veri" },
+    refresh: { en: "Refresh", tr: "Yenile" },
+  },
+  
+  // Calendar
+  calendar: {
+    title: { en: "Calendar CRM", tr: "Takvim CRM" },
+    subtitle: { en: "Manage appointments across all team members with real-time updates.", tr: "Tüm ekip üyeleri arasında randevuları gerçek zamanlı güncellemelerle yönetin." },
+    mockPreview: { en: "Mock Dashboard Preview - Manage appointments across all team members with real-time updates.", tr: "Mock Dashboard Önizlemesi - Tüm ekip üyeleri arasında randevuları gerçek zamanlı güncellemelerle yönetin." },
+    connectGoogle: { en: "Connect Google Calendar", tr: "Google Takvim'i Bağla" },
+    disconnectGoogle: { en: "Disconnect Google", tr: "Google'ı Bağlantıyı Kes" },
+    googleCalendar: { en: "Google Calendar", tr: "Google Takvim" },
+    events: { en: "events", tr: "etkinlik" },
+    show: { en: "Show", tr: "Göster" },
+    hide: { en: "Hide", tr: "Gizle" },
+    noTeamMembers: { en: "No team members yet", tr: "Henüz ekip üyesi yok" },
+    addTeamMembers: { en: "Add team members (doctors/agents) to start scheduling appointments. You can do this from the Settings page.", tr: "Randevu planlamaya başlamak için ekip üyeleri (doktorlar/ajanlar) ekleyin. Bunu Ayarlar sayfasından yapabilirsiniz." },
+    goToSettings: { en: "Go to Settings", tr: "Ayarlara Git" },
   },
   
   // Leads

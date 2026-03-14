@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { useLanguage } from "@/lib/i18n";
@@ -429,11 +429,13 @@ function DayPlanEditor({
 
 // ─── Main Page ───────────────────────────────────────────────────────
 
-export default function CampaignsPage() {
+function CampaignsPageContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   useTenant();
   const { user } = useAuth();
   const { language } = useLanguage();
+  const isMockMode = searchParams.get("mock") === "true";
   const t = (key: keyof typeof campaignTexts): string => {
     const value = campaignTexts[key];
     if (typeof value === "object" && value !== null && "en" in value && "tr" in value) {
@@ -470,8 +472,55 @@ export default function CampaignsPage() {
     whatsapp_config: { phone_number_id: "", access_token: "", business_account_id: "" },
   });
 
+  // Mock data for mock mode
+  const mockCampaigns: AutoCallCampaign[] = [
+    {
+      id: "1",
+      user_id: "mock-user",
+      name: "Weekly Lead Outreach",
+      description: "Automated calling campaign for weekly lead follow-up",
+      is_active: true,
+      status: "running",
+      started_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      day_plans: [
+        { day: 1, action: "call", timeSlots: [{ id: "1", startHour: 9, startMinute: 0, endHour: 12, endMinute: 0, callsPerSlot: 10 }] },
+        { day: 2, action: "call", timeSlots: [{ id: "2", startHour: 9, startMinute: 0, endHour: 12, endMinute: 0, callsPerSlot: 10 }] },
+        { day: 3, action: "whatsapp", timeSlots: [], whatsappMessage: "Hello! We have a special offer for you.", whatsappSendHour: 10, whatsappSendMinute: 0 },
+        { day: 4, action: "call", timeSlots: [{ id: "3", startHour: 9, startMinute: 0, endHour: 12, endMinute: 0, callsPerSlot: 10 }] },
+        { day: 5, action: "call", timeSlots: [{ id: "4", startHour: 9, startMinute: 0, endHour: 12, endMinute: 0, callsPerSlot: 10 }] },
+        { day: 6, action: "off", timeSlots: [] },
+        { day: 7, action: "off", timeSlots: [] },
+      ],
+      timezone: "Europe/Istanbul",
+      progress: {
+        current_day: 3,
+        calls_today: 15,
+        messages_today: 5,
+        total_calls: 245,
+        total_messages: 120,
+      },
+      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const loadMockData = useCallback(() => {
+    setIsLoading(true);
+    try {
+      setCampaigns(mockCampaigns);
+      setNewLeadCount(25);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Load campaigns
   const loadCampaigns = useCallback(async () => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     if (!user?.id) { setIsLoading(false); return; }
     try {
       const response = await fetch(`/api/campaigns/auto-call?userId=${user.id}`);
@@ -484,7 +533,7 @@ export default function CampaignsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, isMockMode, loadMockData]);
 
   // Load new lead count
   const loadNewLeadCount = useCallback(async () => {
@@ -501,9 +550,13 @@ export default function CampaignsPage() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
     if (user?.id) { loadCampaigns(); loadNewLeadCount(); }
     else setIsLoading(false);
-  }, [user?.id, loadCampaigns, loadNewLeadCount]);
+  }, [user?.id, loadCampaigns, loadNewLeadCount, isMockMode, loadMockData]);
 
   // Auto-refresh every 30s to show cron progress
   useEffect(() => {
@@ -515,7 +568,11 @@ export default function CampaignsPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([loadCampaigns(), loadNewLeadCount()]);
+    if (isMockMode) {
+      loadMockData();
+    } else {
+      await Promise.all([loadCampaigns(), loadNewLeadCount()]);
+    }
     setIsRefreshing(false);
   };
 
@@ -891,5 +948,17 @@ export default function CampaignsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function CampaignsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <CampaignsPageContent />
+    </Suspense>
   );
 }

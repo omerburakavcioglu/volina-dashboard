@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { LayoutDashboard, GitBranch } from "lucide-react";
 import FunnelDashboard from "@/components/funnel/FunnelDashboard";
 import FunnelAdvancedFlow from "@/components/funnel/FunnelAdvancedFlow";
+import MockFunnelDashboard from "@/components/funnel/MockFunnelDashboard";
 
 type Tab = "dashboard" | "flow";
 
@@ -12,7 +14,9 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
   { id: "flow", label: "Automation Flow", icon: GitBranch },
 ];
 
-export default function FunnelPage() {
+function FunnelPageContent() {
+  const searchParams = useSearchParams();
+  const isMockMode = searchParams.get("mock") === "true";
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
 
   return (
@@ -43,8 +47,22 @@ export default function FunnelPage() {
       </div>
 
       {/* Content */}
-      {activeTab === "dashboard" && <FunnelDashboard />}
+      {activeTab === "dashboard" && (
+        isMockMode ? <MockFunnelDashboard /> : <FunnelDashboard />
+      )}
       {activeTab === "flow" && <FunnelAdvancedFlow />}
     </div>
+  );
+}
+
+export default function FunnelPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <FunnelPageContent />
+    </Suspense>
   );
 }

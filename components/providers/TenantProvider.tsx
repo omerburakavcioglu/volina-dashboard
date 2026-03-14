@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useContext, ReactNode, useState, useEffect } from "react";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { createContext, useContext, ReactNode, useState, useEffect, Suspense } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "./SupabaseProvider";
 import type { Profile } from "@/lib/types";
 
@@ -14,24 +14,42 @@ interface TenantContextType {
 
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
-export function TenantProvider({ children }: { children: ReactNode }) {
+function TenantProviderContent({ children }: { children: ReactNode }) {
   const params = useParams();
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, session, isAuthenticated, isLoading: authLoading } = useAuth();
   
   const [tenantProfile, setTenantProfile] = useState<Profile | null>(null);
   const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   
   const tenant = params?.tenant as string | undefined;
+  const isMockMode = searchParams.get("mock") === "true";
   
   const isPublicRoute = pathname?.endsWith("/mockfunnel") ?? false;
   
   // Check if current user owns this tenant
   const isOwner = user?.slug === tenant;
   
+  // Mock profile for mock mode
+  const mockProfile: Profile = {
+    id: "mock-user-id",
+    email: "mock@example.com",
+    full_name: "Mock User",
+    avatar_url: null,
+    slug: tenant || "mock",
+    role: "user",
+    dashboard_type: "outbound",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  
   useEffect(() => {
-    if (isPublicRoute) {
+    if (isPublicRoute || isMockMode) {
+      if (isMockMode) {
+        setTenantProfile(mockProfile);
+      }
       setHasCheckedAuth(true);
       return;
     }
@@ -64,19 +82,27 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     }, 100);
     
     return () => clearTimeout(timer);
-  }, [authLoading, session, user, tenant, router, isPublicRoute]);
+  }, [authLoading, session, user, tenant, router, isPublicRoute, isMockMode]);
 
   return (
     <TenantContext.Provider
       value={{
         tenant: tenant || null,
-        tenantProfile: tenantProfile || user,
-        isOwner,
-        isLoading: authLoading || !hasCheckedAuth,
+        tenantProfile: isMockMode ? mockProfile : (tenantProfile || user),
+        isOwner: isMockMode ? true : isOwner,
+        isLoading: isMockMode ? false : (authLoading || !hasCheckedAuth),
       }}
     >
       {children}
     </TenantContext.Provider>
+  );
+}
+
+export function TenantProvider({ children }: { children: ReactNode }) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+      <TenantProviderContent>{children}</TenantProviderContent>
+    </Suspense>
   );
 }
 

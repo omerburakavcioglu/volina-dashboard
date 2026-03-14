@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Phone, 
   RefreshCw,
@@ -116,7 +117,9 @@ function KPICard({
   );
 }
 
-export default function OutboundDashboard() {
+function OutboundDashboardContent() {
+  const searchParams = useSearchParams();
+  const isMockMode = searchParams.get("mock") === "true";
   const { user, isLoading: authLoading } = useAuth();
   const { language } = useLanguage();
   const t = (key: keyof typeof dashboardTexts) => dashboardTexts[key][language];
@@ -208,7 +211,110 @@ export default function OutboundDashboard() {
   // All calls stored for date range filtering
   const [allCalls, setAllCalls] = useState<Call[]>([]);
 
+  // Mock data for mock mode
+  const loadMockData = useCallback(() => {
+    setIsLoading(true);
+    try {
+      // Mock KPI data
+      setMonthlyCalls(1247);
+      setMonthlyCallsTrend({ value: 12, type: "up" });
+      setDailyCalls(42);
+      setDailyCallsTrend({ value: 5, type: "up" });
+      setAvgDuration(245);
+      setAvgDurationTrend({ value: 3, type: "up" });
+      setConversionRate(68);
+      setConversionRateTrend({ value: 2, type: "up" });
+      
+      // Mock call distribution
+      setCallDistribution({ low: 120, medium: 320, high: 450 });
+      
+      // Mock weekly activity - Last 7 days with varied data (not all zeros)
+      setWeeklyActivity([
+        { date: "MON", calls: 38, appointments: 26 },
+        { date: "TUE", calls: 45, appointments: 31 },
+        { date: "WED", calls: 42, appointments: 29 },
+        { date: "THU", calls: 51, appointments: 35 },
+        { date: "FRI", calls: 47, appointments: 32 },
+        { date: "SAT", calls: 25, appointments: 17 },
+        { date: "SUN", calls: 19, appointments: 13 },
+      ]);
+      
+      // Mock important leads
+      setImportantLeads([
+        { id: "1", name: "John Doe", phone: "+1 234 567 8900", score: 9, date: new Date().toISOString(), summary: "Very interested in premium plan" },
+        { id: "2", name: "Jane Smith", phone: "+1 234 567 8901", score: 8, date: new Date().toISOString(), summary: "Interested in services" },
+        { id: "3", name: "Bob Johnson", phone: "+1 234 567 8902", score: 7, date: new Date().toISOString(), summary: "Follow-up needed" },
+      ]);
+      
+      // Mock pipeline counts
+      setPipelineCounts({
+        new: 45,
+        contacted: 120,
+        interested: 85,
+        appointment_set: 65,
+        converted: 42,
+        unreachable: 28,
+        lost: 15,
+      });
+      
+      // Mock today's actions
+      setTodayActions([
+        { id: "1", name: "John Doe", phone: "+1 234 567 8900", status: "interested", nextContactDate: new Date().toISOString() },
+        { id: "2", name: "Jane Smith", phone: "+1 234 567 8901", status: "appointment_set", nextContactDate: new Date().toISOString() },
+      ]);
+      
+      // Mock campaign summary
+      setCampaignSummary({
+        active: 2,
+        totalCalls: 1247,
+        totalMessages: 856,
+      });
+      
+      // Mock calls for date range filtering (Last 7 Days Overview)
+      const mockCallsForFiltering: Call[] = [];
+      const now = new Date();
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        // Add multiple calls per day with varied data
+        const callsPerDay = i === 0 ? 8 : i === 1 ? 10 : i === 2 ? 9 : i === 3 ? 12 : i === 4 ? 11 : i === 5 ? 6 : 5;
+        for (let j = 0; j < callsPerDay; j++) {
+          const callDate = new Date(date);
+          callDate.setHours(9 + j * 2, Math.floor(Math.random() * 60), 0);
+          mockCallsForFiltering.push({
+            id: `mock-call-${i}-${j}`,
+            user_id: "mock-user",
+            vapi_call_id: `mock-vapi-${i}-${j}`,
+            appointment_id: null,
+            recording_url: null,
+            transcript: `AI: Hello, this is Volina AI. User: Hi, I'm interested. AI: Great! User: Tell me more.`,
+            summary: `Mock call ${j + 1} on day ${i + 1}`,
+            sentiment: j % 3 === 0 ? "positive" : j % 3 === 1 ? "neutral" : "positive",
+            duration: 180 + Math.floor(Math.random() * 120),
+            type: j % 3 === 0 ? "appointment" : "inquiry",
+            caller_phone: `+123456789${i}${j}`,
+            caller_name: `Mock User ${i}-${j}`,
+            evaluation_summary: "Interested",
+            evaluation_score: j % 3 === 0 ? 8 : j % 3 === 1 ? 6 : 7,
+            tags: [],
+            metadata: { endedReason: "completed" },
+            created_at: callDate.toISOString(),
+            updated_at: callDate.toISOString(),
+          });
+        }
+      }
+      setAllCalls(mockCallsForFiltering);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     if (!user?.id) {
       setIsLoading(false);
       return;
@@ -616,24 +722,33 @@ export default function OutboundDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, isMockMode, loadMockData]);
 
   useEffect(() => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     if (authLoading) {
       setIsLoading(true);
       return;
     }
     
     if (user?.id) {
-    loadData();
+      loadData();
     } else {
       setIsLoading(false);
     }
-  }, [user?.id, authLoading, loadData]);
+  }, [user?.id, authLoading, loadData, isMockMode, loadMockData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadData();
+    if (isMockMode) {
+      loadMockData();
+    } else {
+      await loadData();
+    }
     setIsRefreshing(false);
   };
 
@@ -1209,5 +1324,17 @@ export default function OutboundDashboard() {
       </div>
 
     </div>
+  );
+}
+
+export default function OutboundDashboard() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    }>
+      <OutboundDashboardContent />
+    </Suspense>
   );
 }

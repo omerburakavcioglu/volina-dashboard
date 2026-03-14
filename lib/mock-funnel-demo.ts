@@ -25,12 +25,12 @@ const BUCKET_COLORS: Record<string, string> = {
 };
 
 export const MOCK_BUCKETS: SimpleStageSummary[] = [
-  { stage: "new", label: "New", count: 847, percentage: 43, trend: 2, color: BUCKET_COLORS.new },
-  { stage: "contacting", label: "Contacting", count: 412, percentage: 21, trend: -1, color: BUCKET_COLORS.contacting },
-  { stage: "nurturing", label: "Nurturing", count: 324, percentage: 17, trend: 0, color: BUCKET_COLORS.nurturing },
-  { stage: "ready", label: "Ready", count: 28, percentage: 1, trend: 1, color: BUCKET_COLORS.ready },
-  { stage: "in_treatment", label: "In Treatment", count: 156, percentage: 8, trend: 0, color: BUCKET_COLORS.in_treatment },
-  { stage: "loyal", label: "Loyal", count: 89, percentage: 5, trend: 1, color: BUCKET_COLORS.loyal },
+  { stage: "new", label: "New", count: 847, percentage: 43, trend: 2, color: BUCKET_COLORS.new! },
+  { stage: "contacting", label: "Contacting", count: 412, percentage: 21, trend: -1, color: BUCKET_COLORS.contacting! },
+  { stage: "nurturing", label: "Nurturing", count: 324, percentage: 17, trend: 0, color: BUCKET_COLORS.nurturing! },
+  { stage: "ready", label: "Ready", count: 28, percentage: 1, trend: 1, color: BUCKET_COLORS.ready! },
+  { stage: "in_treatment", label: "In Treatment", count: 156, percentage: 8, trend: 0, color: BUCKET_COLORS.in_treatment! },
+  { stage: "loyal", label: "Loyal", count: 89, percentage: 5, trend: 1, color: BUCKET_COLORS.loyal! },
 ];
 
 export const MOCK_METRICS: FunnelMetrics = {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { KPICards } from "@/components/dashboard/KPICards";
 import { Charts } from "@/components/dashboard/Charts";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
@@ -10,6 +10,7 @@ import { RefreshCw, Cloud, Database } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { getCallStats, getDailyActivity, getRecentActivity } from "@/lib/supabase";
+import { useTranslation } from "@/lib/i18n";
 
 interface KPIData {
   monthlyCalls: number;
@@ -42,14 +43,18 @@ interface ActivityItem {
   sentiment?: "positive" | "neutral" | "negative";
 }
 
-export default function DashboardPage() {
+function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const { t } = useTranslation("dashboard");
+  
+  const isMockMode = searchParams.get("mock") === "true";
   
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [dataSource, setDataSource] = useState<"vapi" | "supabase" | null>(null);
+  const [dataSource, setDataSource] = useState<"vapi" | "supabase" | "mock" | null>(null);
   const [kpiData, setKpiData] = useState<KPIData>({
     monthlyCalls: 0,
     monthlyChange: 0,
@@ -64,21 +69,103 @@ export default function DashboardPage() {
   const [dailyActivityData, setDailyActivityData] = useState<DailyActivityData[]>([]);
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
 
-  // Redirect if not authenticated
+  // Mock data
+  const mockKPIData: KPIData = {
+    monthlyCalls: 1247,
+    monthlyChange: 12,
+    dailyCalls: 42,
+    dailyChange: 5,
+    avgDuration: 245, // 4:05 in seconds
+    durationChange: -3,
+    appointmentRate: 68,
+    appointmentRateChange: 2,
+  };
+
+  const mockCallTypeData: CallTypeData[] = [
+    { name: "Appointments", value: 850, color: "#0055FF" },
+    { name: "Inquiries", value: 320, color: "#8B5CF6" },
+    { name: "Follow-ups", value: 77, color: "#F59E0B" },
+  ];
+
+  // Mock daily activity for last 7 days - varied data (not all zeros)
+  const mockDailyActivityData: DailyActivityData[] = [
+    { date: "Mon", calls: 38, appointments: 26 },
+    { date: "Tue", calls: 45, appointments: 31 },
+    { date: "Wed", calls: 42, appointments: 29 },
+    { date: "Thu", calls: 51, appointments: 35 },
+    { date: "Fri", calls: 47, appointments: 32 },
+    { date: "Sat", calls: 25, appointments: 17 },
+    { date: "Sun", calls: 19, appointments: 13 },
+  ];
+
+  const mockRecentActivity: ActivityItem[] = [
+    {
+      id: "1",
+      type: "appointment",
+      description: "New appointment scheduled with John Doe for tomorrow at 2:00 PM",
+      timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      sentiment: "positive",
+    },
+    {
+      id: "2",
+      type: "call",
+      description: "Incoming call from +1 234 567 8900 - Inquiry about services",
+      timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+      sentiment: "neutral",
+    },
+    {
+      id: "3",
+      type: "appointment",
+      description: "Appointment confirmed with Sarah Smith for next week",
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      sentiment: "positive",
+    },
+    {
+      id: "4",
+      type: "inquiry",
+      description: "Customer inquiry about pricing and availability",
+      timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      sentiment: "neutral",
+    },
+    {
+      id: "5",
+      type: "appointment",
+      description: "Follow-up call completed - Customer interested in premium plan",
+      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      sentiment: "positive",
+    },
+  ];
+
+  // Redirect if not authenticated (unless in mock mode)
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    if (!isMockMode && !authLoading && !isAuthenticated) {
       router.push("/login");
     }
-  }, [authLoading, isAuthenticated, router]);
+  }, [authLoading, isAuthenticated, router, isMockMode]);
 
-  // Redirect outbound users to their dashboard
+  // Redirect outbound users to their dashboard (unless in mock mode)
   useEffect(() => {
-    if (!authLoading && isAuthenticated && user?.dashboard_type === 'outbound') {
+    if (!isMockMode && !authLoading && isAuthenticated && user?.dashboard_type === 'outbound') {
       router.push("/dashboard/outbound");
     }
-  }, [authLoading, isAuthenticated, user, router]);
+  }, [authLoading, isAuthenticated, user, router, isMockMode]);
+
+  const loadMockData = useCallback(() => {
+    setDataSource("mock");
+    setKpiData(mockKPIData);
+    setCallTypeData(mockCallTypeData);
+    setDailyActivityData(mockDailyActivityData);
+    setRecentActivity(mockRecentActivity);
+    setLastUpdated(new Date());
+    setIsLoading(false);
+  }, []);
 
   const loadData = useCallback(async () => {
+    // If in mock mode, use mock data
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
     const typeColors: Record<string, string> = {
       appointment: "#0055FF",
       inquiry: "#8B5CF6",
@@ -199,22 +286,28 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     }
-  }, []);
+  }, [isMockMode, loadMockData]);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isMockMode) {
+      loadMockData();
+    } else if (isAuthenticated) {
       loadData().then(() => setIsLoading(false));
     }
-  }, [isAuthenticated, loadData]);
+  }, [isAuthenticated, isMockMode, loadData, loadMockData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadData();
+    if (isMockMode) {
+      loadMockData();
+    } else {
+      await loadData();
+    }
     setIsRefreshing(false);
   };
 
-  // Show loading while checking auth
-  if (authLoading) {
+  // Show loading while checking auth (unless in mock mode)
+  if (!isMockMode && authLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <RefreshCw className="w-8 h-8 animate-spin text-primary" />
@@ -247,9 +340,12 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t("title")}</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Welcome back{user?.full_name ? `, ${user.full_name}` : ""}! Here&apos;s your AI voice agent overview.
+            {isMockMode 
+              ? t("mockPreview")
+              : `${t("welcomeBack")}${user?.full_name ? `, ${user.full_name}` : ""}! ${t("subtitle")}`
+            }
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -257,17 +353,24 @@ export default function DashboardPage() {
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
               dataSource === "vapi" 
                 ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
+                : dataSource === "mock"
+                ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
                 : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
             }`}>
               {dataSource === "vapi" ? (
                 <>
                   <Cloud className="w-3 h-3" />
-                  Live from VAPI
+                  {t("liveFromVapi")}
+                </>
+              ) : dataSource === "mock" ? (
+                <>
+                  <Database className="w-3 h-3" />
+                  {t("mockData")}
                 </>
               ) : (
                 <>
                   <Database className="w-3 h-3" />
-                  From Database
+                  {t("fromDatabase")}
                 </>
               )}
             </span>
@@ -283,7 +386,7 @@ export default function DashboardPage() {
             className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-            Refresh
+            {t("refresh")}
           </Button>
         </div>
       </div>
@@ -307,12 +410,12 @@ export default function DashboardPage() {
         
         {/* Quick Stats Card */}
         <div className="bg-gradient-to-br from-primary to-blue-700 rounded-xl p-5 text-white">
-          <h3 className="text-lg font-semibold mb-4">AI Performance</h3>
+          <h3 className="text-lg font-semibold mb-4">{t("aiPerformance")}</h3>
           <div className="space-y-4">
             {[
-              { label: "Call Completion Rate", value: kpiData.monthlyCalls > 0 ? "98.5%" : "N/A" },
-              { label: "Appointment Conversion", value: `${kpiData.appointmentRate}%` },
-              { label: "Customer Satisfaction", value: kpiData.monthlyCalls > 0 ? "94%" : "N/A" },
+              { label: t("callCompletionRate"), value: kpiData.monthlyCalls > 0 ? "98.5%" : "N/A" },
+              { label: t("appointmentConversion"), value: `${kpiData.appointmentRate}%` },
+              { label: t("customerSatisfaction"), value: kpiData.monthlyCalls > 0 ? "94%" : "N/A" },
             ].map((stat) => (
               <div key={stat.label}>
                 <div className="flex justify-between text-sm mb-1">
@@ -331,9 +434,9 @@ export default function DashboardPage() {
           <div className="mt-5 pt-4 border-t border-white/20">
             <p className="text-sm opacity-80">
               {kpiData.monthlyCalls > 0 ? (
-                <>Your AI is performing <span className="font-semibold text-white">above average</span> compared to similar businesses.</>
+                <>{t("aboveAverage")}</>
               ) : (
-                <>Start making calls to see your AI performance metrics.</>
+                <>{t("startMakingCalls")}</>
               )}
             </p>
           </div>
@@ -342,3 +445,17 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+function DashboardPageContent() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <DashboardPage />
+    </Suspense>
+  );
+}
+
+export default DashboardPageContent;

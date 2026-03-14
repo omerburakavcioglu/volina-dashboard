@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useTenant } from "@/components/providers/TenantProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { cn } from "@/lib/utils";
@@ -23,14 +23,22 @@ import {
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useLanguage, useTranslation } from "@/lib/i18n";
 
-export function TenantSidebar() {
+function TenantSidebarContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { tenant, tenantProfile } = useTenant();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage } = useLanguage();
   const { t } = useTranslation("sidebar");
   const [mobileOpen, setMobileOpen] = useState(false);
+  
+  const isMockMode = searchParams.get("mock") === "true";
+  
+  // Helper to preserve mock query param
+  const getHref = (href: string) => {
+    return isMockMode ? `${href}?mock=true` : href;
+  };
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -135,7 +143,7 @@ export function TenantSidebar() {
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={getHref(item.href)}
                 className={cn(
                   "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
                   active
@@ -200,5 +208,19 @@ export function TenantSidebar() {
         </div>
       </aside>
     </>
+  );
+}
+
+export function TenantSidebar() {
+  return (
+    <Suspense fallback={
+      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
+        <div className="h-full flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </aside>
+    }>
+      <TenantSidebarContent />
+    </Suspense>
   );
 }

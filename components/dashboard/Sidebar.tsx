@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { 
@@ -19,7 +20,8 @@ import {
   PhoneOutgoing,
   MessageSquare,
   BarChart3,
-  Target
+  Target,
+  Globe
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useState, useMemo } from "react";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useAuth } from "@/components/providers/SupabaseProvider";
+import { useLanguage } from "@/lib/i18n";
 
 // Inbound dashboard navigation (existing)
 const inboundNavItems = [
@@ -76,13 +79,21 @@ const outboundNavItems = [
   },
 ];
 
-export function Sidebar() {
+function SidebarInner() {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { user, signOut } = useAuth();
+  const { language, setLanguage } = useLanguage();
+  
+  const isMockMode = searchParams.get("mock") === "true";
+  
+  const toggleLanguage = () => {
+    setLanguage(language === "en" ? "tr" : "en");
+  };
   
   // Determine if we're in outbound dashboard based on path or user preference
   const isOutbound = useMemo(() => {
@@ -90,6 +101,11 @@ export function Sidebar() {
   }, [pathname]);
   
   const navItems = isOutbound ? outboundNavItems : inboundNavItems;
+  
+  // Helper to preserve mock query param
+  const getHref = (href: string) => {
+    return isMockMode ? `${href}?mock=true` : href;
+  };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -151,7 +167,7 @@ export function Sidebar() {
             return (
               <li key={item.href}>
                 <Link
-                  href={item.href}
+                  href={getHref(item.href)}
                   className={cn(
                     "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
                     isActive 
@@ -171,6 +187,19 @@ export function Sidebar() {
 
         {/* Settings link */}
         <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700 space-y-1">
+          {/* Language toggle */}
+          <button
+            onClick={toggleLanguage}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-all duration-200",
+              isCollapsed && "justify-center px-3"
+            )}
+            title={isCollapsed ? (language === "en" ? "Türkçe" : "English") : undefined}
+          >
+            <Globe className={cn("w-5 h-5 flex-shrink-0", isCollapsed && "w-6 h-6")} />
+            {!isCollapsed && <span>{language === "en" ? "🇹🇷 Türkçe" : "🇬🇧 English"}</span>}
+          </button>
+          
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}
@@ -189,7 +218,7 @@ export function Sidebar() {
           </button>
 
           <Link
-            href="/dashboard/settings"
+            href={getHref("/dashboard/settings")}
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-all duration-200",
               pathname === "/dashboard/settings" && "bg-primary text-white shadow-lg shadow-primary/25",
@@ -274,3 +303,19 @@ export function Sidebar() {
     </aside>
   );
 }
+
+function SidebarContent() {
+  return (
+    <Suspense fallback={
+      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
+        <div className="h-full flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </aside>
+    }>
+      <SidebarInner />
+    </Suspense>
+  );
+}
+
+export { SidebarContent as Sidebar };

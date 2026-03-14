@@ -823,7 +823,8 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
         });
 
         // Mark the funnel schedule as completed (cron left it as "processing")
-        const funnelScheduleId = call.metadata?.schedule_id;
+        const callMetadata = call.metadata as Record<string, unknown> | undefined;
+        const funnelScheduleId = callMetadata?.schedule_id;
         if (funnelScheduleId) {
           await (supabase as any)
             .from("funnel_schedules")
@@ -831,7 +832,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
             .eq("id", funnelScheduleId)
             .eq("status", "processing");
           console.log(`[funnel] Marked schedule ${funnelScheduleId} as completed`);
-        } else if (call.metadata?.source === "funnel") {
+        } else if (callMetadata?.source === "funnel") {
           // Fallback: find the processing schedule for this funnel lead
           await (supabase as any)
             .from("funnel_schedules")

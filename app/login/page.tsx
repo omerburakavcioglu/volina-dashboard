@@ -6,7 +6,7 @@ import { useAuth } from "@/components/providers/SupabaseProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, Mail, Lock, AlertCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, Mail, Lock, AlertCircle, LayoutDashboard } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -122,11 +122,27 @@ function LoginContent() {
     );
   }
 
+  const handleMockDashboard = () => {
+    router.push("/mock?mock=true");
+  };
+
   // Always show the form immediately - no waiting
   return (
     <div className="min-h-screen flex">
       {/* Left side - Login form */}
-      <div className="flex-1 flex flex-col justify-center px-8 lg:px-16 xl:px-24 bg-white dark:bg-gray-900">
+      <div className="flex-1 flex flex-col justify-center px-8 lg:px-16 xl:px-24 bg-white dark:bg-gray-900 relative">
+        {/* Try Dashboard Button - Top Right Corner */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleMockDashboard}
+          className="absolute top-6 right-6 lg:top-8 lg:right-8 flex items-center gap-2 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          <span className="hidden sm:inline">Try Dashboard</span>
+          <span className="sm:hidden">Try</span>
+        </Button>
+
         <div className="max-w-md w-full mx-auto">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 mb-10">

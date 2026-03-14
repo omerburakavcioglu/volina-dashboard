@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import type { Call } from "@/lib/types";
 import {
@@ -1947,7 +1948,9 @@ function CallRow({
 
 type SortOption = "latest" | "earliest" | "score_high" | "score_low";
   
-export default function CallsPage() {
+function CallsPageContent() {
+  const searchParams = useSearchParams();
+  const isMockMode = searchParams.get("mock") === "true";
   const { user, isLoading: authLoading } = useAuth();
   const { t, language } = useTranslation("calls");
   const [calls, setCalls] = useState<Call[]>([]);
@@ -1975,7 +1978,494 @@ export default function CallsPage() {
     console.log(`[CallsPage] Updated call ${callId} in state`);
   }, []);
 
+  // Mock data for mock mode - comprehensive list with proper scoring
+  const mockCalls: Call[] = [
+    {
+      id: "1",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-1",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI calling. How can I help you today? User: Hi, I'm interested in scheduling an appointment. AI: Great! When would be convenient for you? User: Tomorrow afternoon would work. AI: Perfect, I can schedule you for 2:00 PM tomorrow. User: That sounds great, thank you!",
+      summary: "New appointment scheduled with John Doe for tomorrow at 2:00 PM",
+      sentiment: "positive",
+      duration: 245,
+      type: "appointment",
+      caller_phone: "+1234567890",
+      caller_name: "John Doe",
+      evaluation_summary: "High interest",
+      evaluation_score: 8,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "2",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-2",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. How can I assist you? User: I'd like to know about your services and pricing. AI: We offer several packages. User: Can you tell me more about the premium option? AI: The premium package includes full consultation and follow-up. User: Okay, I'll think about it. Thanks.",
+      summary: "Inquiry about services and pricing",
+      sentiment: "neutral",
+      duration: 180,
+      type: "inquiry",
+      caller_phone: "+1234567891",
+      caller_name: "Jane Smith",
+      evaluation_summary: "Neutral interest",
+      evaluation_score: 6,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "3",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-3",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Good morning! This is Volina AI calling. User: Hi there! AI: I'm calling to confirm your appointment for next week. User: Yes, I'm very excited! AI: Great! The appointment is scheduled for Tuesday at 10 AM. User: Perfect, I'll be there. Thank you so much!",
+      summary: "Appointment confirmed with Sarah Johnson for next week",
+      sentiment: "positive",
+      duration: 320,
+      type: "appointment",
+      caller_phone: "+1234567892",
+      caller_name: "Sarah Johnson",
+      evaluation_summary: "Very interested",
+      evaluation_score: 9,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "4",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-4",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, I need to reschedule my appointment. AI: No problem, when would work better? User: Next Friday at 3 PM would be perfect. AI: I've rescheduled you for Friday at 3 PM. User: Thank you!",
+      summary: "Appointment rescheduled with Michael Brown",
+      sentiment: "positive",
+      duration: 195,
+      type: "appointment",
+      caller_phone: "+1234567893",
+      caller_name: "Michael Brown",
+      evaluation_summary: "Interested",
+      evaluation_score: 7,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "5",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-5",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Emily, this is Volina AI following up. User: Hi, thanks for calling. AI: I wanted to discuss treatment options with you. User: Yes, I have some questions. AI: Of course, what would you like to know? User: How long does the procedure take? AI: Typically about 2 hours. User: And what about recovery time? AI: Most patients are back to normal within a week. User: That sounds good, I'm very interested.",
+      summary: "Follow-up call with Emily Davis",
+      sentiment: "positive",
+      duration: 420,
+      type: "follow_up",
+      caller_phone: "+1234567894",
+      caller_name: "Emily Davis",
+      evaluation_summary: "Very interested",
+      evaluation_score: 9,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "6",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-6",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, I'm calling about pricing. AI: I'd be happy to help. User: What are your payment options? AI: We offer several financing plans. User: Can you tell me more? AI: Yes, we have monthly payment plans available. User: Okay, I'll consider it.",
+      summary: "Pricing inquiry from Robert Wilson",
+      sentiment: "neutral",
+      duration: 280,
+      type: "inquiry",
+      caller_phone: "+1234567895",
+      caller_name: "Robert Wilson",
+      evaluation_summary: "Moderate interest",
+      evaluation_score: 5,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "7",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-7",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, I need to cancel my appointment. AI: I'm sorry to hear that. User: I have a scheduling conflict. AI: Would you like to reschedule? User: Maybe next month. AI: I can help with that. User: Thanks, I'll call back.",
+      summary: "Appointment cancellation from Lisa Anderson",
+      sentiment: "neutral",
+      duration: 150,
+      type: "cancellation",
+      caller_phone: "+1234567896",
+      caller_name: "Lisa Anderson",
+      evaluation_summary: "Neutral",
+      evaluation_score: 4,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "8",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-8",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hello, I'm interested in your services. AI: Great! What would you like to know? User: I'd like to schedule a consultation. AI: I can help with that. When works for you? User: Next week would be perfect. AI: I've scheduled you for next Tuesday. User: Excellent, thank you!",
+      summary: "New inquiry from David Martinez",
+      sentiment: "positive",
+      duration: 365,
+      type: "inquiry",
+      caller_phone: "+1234567897",
+      caller_name: "David Martinez",
+      evaluation_summary: "High interest",
+      evaluation_score: 8,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "9",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-9",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Jennifer, this is Volina AI. User: Hi! AI: I'm calling to confirm your appointment for tomorrow at 10 AM. User: Yes, I'm all set and very excited! AI: Perfect, see you tomorrow. User: Thank you!",
+      summary: "Appointment confirmation with Jennifer Taylor",
+      sentiment: "positive",
+      duration: 120,
+      type: "appointment",
+      caller_phone: "+1234567898",
+      caller_name: "Jennifer Taylor",
+      evaluation_summary: "Very interested",
+      evaluation_score: 9,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 3 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "10",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-10",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Christopher, this is Volina AI following up. User: Hi, thanks for calling. AI: How are you feeling after the consultation? User: Good, I have some questions. AI: I'm here to help. User: What's the recovery time? AI: Typically 5-7 days. User: And what about aftercare? AI: We'll provide detailed instructions. User: Perfect, thanks!",
+      summary: "Follow-up call with Christopher Lee",
+      sentiment: "positive",
+      duration: 380,
+      type: "follow_up",
+      caller_phone: "+1234567899",
+      caller_name: "Christopher Lee",
+      evaluation_summary: "Interested",
+      evaluation_score: 7,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "11",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-11",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, are there any special promotions? AI: Yes, we have current offers. User: Can you tell me more? AI: We have a 20% discount this month. User: That's interesting, I'll think about it.",
+      summary: "Promotion inquiry from Amanda White",
+      sentiment: "neutral",
+      duration: 220,
+      type: "inquiry",
+      caller_phone: "+1234567900",
+      caller_name: "Amanda White",
+      evaluation_summary: "Moderate interest",
+      evaluation_score: 5,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "12",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-12",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello James, this is Volina AI. User: Hi! I'm very satisfied with my previous service. AI: That's wonderful to hear! User: I'd like to schedule another appointment. AI: I'd be happy to help. When works for you? User: Next month would be perfect. AI: I've scheduled you for next month. User: Thank you so much!",
+      summary: "Follow-up appointment with James Harris",
+      sentiment: "positive",
+      duration: 195,
+      type: "appointment",
+      caller_phone: "+1234567901",
+      caller_name: "James Harris",
+      evaluation_summary: "Very interested",
+      evaluation_score: 10,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "13",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-13",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, I'm interested in learning more. AI: I'd be happy to help. User: What services do you offer? AI: We offer comprehensive consultation services. User: I'd like to schedule a consultation. AI: I've scheduled you for next week. User: Perfect, thank you!",
+      summary: "New inquiry from Patricia Clark",
+      sentiment: "positive",
+      duration: 310,
+      type: "inquiry",
+      caller_phone: "+1234567902",
+      caller_name: "Patricia Clark",
+      evaluation_summary: "High interest",
+      evaluation_score: 8,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 - 4 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "14",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-14",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Daniel, this is Volina AI. User: Hi, I'd like to discuss treatment options. AI: I'm here to help. User: What are the different options available? AI: We have several treatment plans. User: Can you explain each one? AI: Of course. The first option is... User: That sounds interesting. AI: Would you like to schedule a consultation? User: Yes, absolutely!",
+      summary: "Treatment discussion with Daniel Lewis",
+      sentiment: "positive",
+      duration: 450,
+      type: "inquiry",
+      caller_phone: "+1234567903",
+      caller_name: "Daniel Lewis",
+      evaluation_summary: "Very interested",
+      evaluation_score: 9,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "15",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-15",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Michelle, this is Volina AI. User: Hi! AI: I'm calling to remind you about tomorrow's appointment. User: Yes, I'll be there. AI: Perfect, see you tomorrow. User: Thank you!",
+      summary: "Appointment reminder with Michelle Walker",
+      sentiment: "positive",
+      duration: 95,
+      type: "appointment",
+      caller_phone: "+1234567904",
+      caller_name: "Michelle Walker",
+      evaluation_summary: "Interested",
+      evaluation_score: 7,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 - 1 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "16",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-16",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, I have questions about insurance. AI: I can help with that. User: Do you accept my insurance? AI: We accept most major insurance plans. User: What about payment plans? AI: We offer flexible payment options. User: Okay, I'll check with my insurance.",
+      summary: "Insurance inquiry from Mark Young",
+      sentiment: "neutral",
+      duration: 275,
+      type: "inquiry",
+      caller_phone: "+1234567905",
+      caller_name: "Mark Young",
+      evaluation_summary: "Moderate interest",
+      evaluation_score: 6,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "17",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-17",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Nancy, this is Volina AI following up. User: Hi, thanks for calling. AI: How are you feeling after treatment? User: I'm very satisfied! AI: That's great to hear. User: I'm actually considering additional services. AI: I'd be happy to discuss options. User: Yes, let's schedule something.",
+      summary: "Post-treatment follow-up with Nancy King",
+      sentiment: "positive",
+      duration: 340,
+      type: "follow_up",
+      caller_phone: "+1234567906",
+      caller_name: "Nancy King",
+      evaluation_summary: "Very interested",
+      evaluation_score: 9,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000 - 3 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "18",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-18",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi, I'm interested in scheduling a consultation. AI: Great! When works for you? User: Next week would be perfect. AI: I've scheduled you for next Tuesday. User: Excellent, I'm very excited!",
+      summary: "New inquiry from Kevin Wright",
+      sentiment: "positive",
+      duration: 290,
+      type: "inquiry",
+      caller_phone: "+1234567907",
+      caller_name: "Kevin Wright",
+      evaluation_summary: "High interest",
+      evaluation_score: 8,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "19",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-19",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Laura, this is Volina AI. User: Hi, I need to reschedule. AI: No problem, when works better? User: Next week would be great. AI: I've rescheduled you. User: Perfect, thank you!",
+      summary: "Appointment rescheduled with Laura Scott",
+      sentiment: "positive",
+      duration: 165,
+      type: "appointment",
+      caller_phone: "+1234567908",
+      caller_name: "Laura Scott",
+      evaluation_summary: "Interested",
+      evaluation_score: 7,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "20",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-20",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello Steven, this is Volina AI. User: Hi, I have questions about preparation. AI: I'm here to help. User: What should I do before the appointment? AI: Please arrive 15 minutes early. User: Any dietary restrictions? AI: Just avoid heavy meals. User: Perfect, thanks!",
+      summary: "Pre-appointment inquiry from Steven Green",
+      sentiment: "positive",
+      duration: 210,
+      type: "inquiry",
+      caller_phone: "+1234567909",
+      caller_name: "Steven Green",
+      evaluation_summary: "Interested",
+      evaluation_score: 7,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    // Add a voicemail call
+    {
+      id: "21",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-21",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI calling. Please leave a message after the beep. I missed your call, please leave me your name, number, and a brief message. I will call you back as soon as possible.",
+      summary: "Voicemail left for Thomas Moore",
+      sentiment: "neutral",
+      duration: 45,
+      type: "inquiry",
+      caller_phone: "+1234567910",
+      caller_name: "Thomas Moore",
+      evaluation_summary: "Voicemail",
+      evaluation_score: null,
+      tags: [],
+      metadata: { endedReason: "voicemail" },
+      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    // Add a low score call
+    {
+      id: "22",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-22",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Not interested. AI: I understand. User: No thanks. AI: Have a good day. User: Bye.",
+      summary: "Low interest call from Rachel Adams",
+      sentiment: "negative",
+      duration: 60,
+      type: "inquiry",
+      caller_phone: "+1234567911",
+      caller_name: "Rachel Adams",
+      evaluation_summary: "Not interested",
+      evaluation_score: 2,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    // Add a medium score call
+    {
+      id: "23",
+      user_id: "mock-user",
+      vapi_call_id: "mock-vapi-23",
+      appointment_id: null,
+      recording_url: null,
+      transcript: "AI: Hello, this is Volina AI. User: Hi. AI: How can I help? User: Just calling to get information. AI: I can provide that. User: Okay, send me some info. AI: I'll send it to you. User: Thanks.",
+      summary: "Information request from Brian Turner",
+      sentiment: "neutral",
+      duration: 120,
+      type: "inquiry",
+      caller_phone: "+1234567912",
+      caller_name: "Brian Turner",
+      evaluation_summary: "Neutral",
+      evaluation_score: 3,
+      tags: [],
+      metadata: { endedReason: "completed" },
+      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const loadMockData = useCallback(() => {
+    setIsLoading(true);
+    try {
+      // Sort by created_at descending (latest first)
+      const sortedCalls = [...mockCalls].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setCalls(sortedCalls);
+      setFilteredCalls(sortedCalls);
+    } finally {
+      setIsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mockCalls is a constant array, no need to include in deps
+
   const loadCalls = useCallback(async (forceRefresh = false) => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     if (!user?.id) {
       setIsLoading(false);
       return;
@@ -2063,9 +2553,14 @@ export default function CallsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, isMockMode, loadMockData]);
 
   useEffect(() => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     if (authLoading) {
       setIsLoading(true);
       return;
@@ -2078,7 +2573,7 @@ export default function CallsPage() {
       setCalls([]);
       setFilteredCalls([]);
     }
-  }, [user?.id, authLoading, loadCalls]);
+  }, [user?.id, authLoading, loadCalls, isMockMode, loadMockData]);
 
   // Filter and sort calls
   useEffect(() => {
@@ -2364,5 +2859,17 @@ export default function CallsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function CallsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <CallsPageContent />
+    </Suspense>
   );
 }

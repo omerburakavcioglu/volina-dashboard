@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useEffect, useState, useCallback, useRef, Suspense, useMemo } from "react";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/providers/SupabaseProvider";
 import { useLanguage } from "@/lib/i18n";
 import type { Lead, LeadStatus, LeadPriority } from "@/lib/types-outbound";
@@ -186,12 +186,14 @@ const getPriorityConfig = (lang: "en" | "tr"): Record<LeadPriority, { label: str
   low: { label: leadsTexts.priorityLabels.low[lang], color: "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300" },
 });
 
-export default function LeadsPage() {
+function LeadsPageContent() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const tenant = params?.tenant as string;
   const { user, isLoading: authLoading } = useAuth();
   const { language } = useLanguage();
+  const isMockMode = searchParams.get("mock") === "true";
   const t = (key: keyof typeof leadsTexts): string => {
     const value = leadsTexts[key];
     if (typeof value === "object" && value !== null && "en" in value && "tr" in value) {
@@ -260,8 +262,176 @@ export default function LeadsPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // Mock data for mock mode
+  const mockLeads: Lead[] = [
+    {
+      id: "1",
+      full_name: "John Doe",
+      phone: "+1234567890",
+      email: "john.doe@example.com",
+      status: "interested",
+      priority: "high",
+      notes: "Very interested in premium plan",
+      language: "en",
+      created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_contact_date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      first_contact_date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      next_contact_date: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+      contact_attempts: 2,
+      unreachable_since: null,
+      campaign_id: null,
+      campaign_day: 0,
+      form_data: { eval_score: 8, eval_summary: "High interest customer" },
+      tags: [],
+      assigned_to: null,
+      whatsapp: null,
+      instagram: null,
+      source: "website",
+      interest: null,
+      treatment_interest: null,
+      user_id: "mock-user",
+    },
+    {
+      id: "2",
+      full_name: "Jane Smith",
+      phone: "+1234567891",
+      email: "jane.smith@example.com",
+      status: "appointment_set",
+      priority: "high",
+      notes: "Appointment scheduled for next week",
+      language: "en",
+      created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_contact_date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      first_contact_date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      next_contact_date: null,
+      contact_attempts: 3,
+      unreachable_since: null,
+      campaign_id: null,
+      campaign_day: 0,
+      form_data: { eval_score: 9, eval_summary: "Very interested" },
+      tags: [],
+      assigned_to: null,
+      whatsapp: null,
+      instagram: null,
+      source: "referral",
+      interest: null,
+      treatment_interest: null,
+      user_id: "mock-user",
+    },
+    {
+      id: "3",
+      full_name: "Bob Johnson",
+      phone: "+1234567892",
+      email: "bob.johnson@example.com",
+      status: "contacted",
+      priority: "medium",
+      notes: "Follow-up needed",
+      language: "en",
+      created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_contact_date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      first_contact_date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      next_contact_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      contact_attempts: 1,
+      unreachable_since: null,
+      campaign_id: null,
+      campaign_day: 0,
+      form_data: { eval_score: 6, eval_summary: "Neutral interest" },
+      tags: [],
+      assigned_to: null,
+      whatsapp: null,
+      instagram: null,
+      source: "social_media",
+      interest: null,
+      treatment_interest: null,
+      user_id: "mock-user",
+    },
+    {
+      id: "4",
+      full_name: "Alice Williams",
+      phone: "+1234567893",
+      email: "alice.williams@example.com",
+      status: "new",
+      priority: "low",
+      notes: "New lead",
+      language: "en",
+      created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_contact_date: null,
+      first_contact_date: null,
+      next_contact_date: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+      contact_attempts: 0,
+      unreachable_since: null,
+      campaign_id: null,
+      campaign_day: 0,
+      form_data: {},
+      tags: [],
+      assigned_to: null,
+      whatsapp: null,
+      instagram: null,
+      source: "website",
+      interest: null,
+      treatment_interest: null,
+      user_id: "mock-user",
+    },
+    {
+      id: "5",
+      full_name: "Charlie Brown",
+      phone: "+1234567894",
+      email: "charlie.brown@example.com",
+      status: "converted",
+      priority: "high",
+      notes: "Converted customer",
+      language: "en",
+      created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_contact_date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      first_contact_date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+      next_contact_date: null,
+      contact_attempts: 5,
+      unreachable_since: null,
+      campaign_id: null,
+      campaign_day: 0,
+      form_data: { eval_score: 10, eval_summary: "Converted" },
+      tags: [],
+      assigned_to: null,
+      whatsapp: null,
+      instagram: null,
+      source: "direct",
+      interest: null,
+      treatment_interest: null,
+      user_id: "mock-user",
+    },
+  ];
+
+  const loadMockData = useCallback(() => {
+    setIsLoading(true);
+    try {
+      setLeads(mockLeads);
+      setTotalLeads(mockLeads.length);
+      setTotalPages(1);
+      setCurrentPage(1);
+      setCallCountsFromApi({
+        "1": 3,
+        "2": 2,
+        "3": 1,
+        "4": 0,
+        "5": 5,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   // Load leads function - use useCallback to prevent infinite loops
   const loadLeads = useCallback(async () => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     if (!user?.id) {
       setIsLoading(false);
       return;
@@ -338,6 +508,11 @@ export default function LeadsPage() {
 
   // Separate effect for initial load and auth changes
   useEffect(() => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
+    
     // Wait for auth to finish loading
     if (authLoading) {
       setIsLoading(true); // Show loading while auth is loading
@@ -358,19 +533,27 @@ export default function LeadsPage() {
       setCurrentPage(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, authLoading]); // Only depend on user and auth loading
+  }, [user?.id, authLoading, isMockMode, loadMockData]); // Only depend on user and auth loading
 
   // Separate effect for page, filter, search, and sort changes
   useEffect(() => {
+    if (isMockMode) {
+      // In mock mode, filtering is done client-side
+      return;
+    }
     if (user?.id && !authLoading) {
       loadLeads();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, statusFilter, evalFilter, debouncedSearch, sortBy, sortOrder]); // Reload when any of these change
+  }, [currentPage, statusFilter, evalFilter, debouncedSearch, sortBy, sortOrder, isMockMode]); // Reload when any of these change
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadLeads();
+    if (isMockMode) {
+      loadMockData();
+    } else {
+      await loadLeads();
+    }
     setIsRefreshing(false);
   };
 
@@ -2301,5 +2484,17 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <LeadsPageContent />
+    </Suspense>
   );
 }

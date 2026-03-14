@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { format, addDays, subDays, isSameDay, parseISO } from "date-fns";
 import { 
@@ -42,6 +42,7 @@ import {
   subscribeToAppointments 
 } from "@/lib/supabase";
 import type { Doctor, Appointment } from "@/lib/types";
+import { useTranslation } from "@/lib/i18n";
 
 // Google Calendar appointment type
 interface GoogleAppointment {
@@ -59,10 +60,14 @@ interface GoogleAppointment {
 }
 
 
-export default function CalendarPage() {
+function CalendarPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const { data: googleSession, status: googleStatus } = useSession();
+  const { t } = useTranslation("calendar");
+  
+  const isMockMode = searchParams.get("mock") === "true";
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -111,15 +116,94 @@ export default function CalendarPage() {
     }
   }, [googleSession?.accessToken, showGoogleCalendar, loadGoogleCalendar]);
 
-  // Redirect if not authenticated
+  // Mock data
+  const mockDoctors: Doctor[] = [
+    { 
+      id: "1", 
+      user_id: "mock-user",
+      name: "Dr. John Smith", 
+      specialty: "General Practice",
+      color_code: "#0055FF",
+      avatar_url: null,
+      email: "john@example.com", 
+      phone: "+1 234 567 8900",
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { 
+      id: "2", 
+      user_id: "mock-user",
+      name: "Dr. Sarah Johnson", 
+      specialty: "Dermatology",
+      color_code: "#8B5CF6",
+      avatar_url: null,
+      email: "sarah@example.com", 
+      phone: "+1 234 567 8901",
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  const mockAppointments: Appointment[] = [
+    {
+      id: "1",
+      user_id: "mock-user",
+      patient_name: "John Doe",
+      patient_email: "john.doe@example.com",
+      patient_phone: "+1 234 567 8900",
+      doctor_id: "1",
+      start_time: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      end_time: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+      status: "scheduled",
+      notes: "Initial consultation",
+      created_via_ai: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: "2",
+      user_id: "mock-user",
+      patient_name: "Jane Smith",
+      patient_email: "jane.smith@example.com",
+      patient_phone: "+1 234 567 8901",
+      doctor_id: "2",
+      start_time: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      end_time: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(),
+      status: "confirmed",
+      notes: "Follow-up appointment",
+      created_via_ai: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  // Redirect if not authenticated (unless in mock mode)
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    if (!isMockMode && !authLoading && !isAuthenticated) {
       router.push("/login");
     }
-  }, [authLoading, isAuthenticated, router]);
+  }, [authLoading, isAuthenticated, router, isMockMode]);
+
+  // Load mock data
+  const loadMockData = useCallback(() => {
+    setDoctors(mockDoctors);
+    setAppointments(mockAppointments.filter(apt => 
+      isSameDay(parseISO(apt.start_time), selectedDate)
+    ));
+    if (mockDoctors[0] && !newAppointment.assignee) {
+      setNewAppointment(prev => ({ ...prev, assignee: mockDoctors[0]!.id }));
+    }
+    setIsLoading(false);
+  }, [selectedDate, newAppointment.assignee]);
 
   // Load data
   const loadData = useCallback(async () => {
+    if (isMockMode) {
+      loadMockData();
+      return;
+    }
     try {
       const [doctorsData, appointmentsData] = await Promise.all([
         getDoctors(),
@@ -137,17 +221,19 @@ export default function CalendarPage() {
     } catch (error) {
       console.error("Error loading calendar data:", error);
     }
-  }, [selectedDate, newAppointment.assignee]);
+  }, [selectedDate, newAppointment.assignee, isMockMode, loadMockData]);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isMockMode) {
+      loadMockData();
+    } else if (isAuthenticated) {
       loadData().then(() => setIsLoading(false));
     }
-  }, [isAuthenticated, loadData]);
+  }, [isAuthenticated, isMockMode, loadData, loadMockData]);
 
-  // Subscribe to realtime updates
+  // Subscribe to realtime updates (skip in mock mode)
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (isMockMode || !isAuthenticated) return;
 
     const subscription = subscribeToAppointments((payload) => {
       if (payload.eventType === "INSERT" && payload.new) {
@@ -167,14 +253,18 @@ export default function CalendarPage() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [isAuthenticated, selectedDate]);
+  }, [isAuthenticated, selectedDate, isMockMode]);
 
-  // Reload appointments when date changes
+  // Reload appointments when date changes (skip in mock mode)
   useEffect(() => {
-    if (isAuthenticated && !isLoading) {
+    if (isMockMode) {
+      setAppointments(mockAppointments.filter(apt => 
+        isSameDay(parseISO(apt.start_time), selectedDate)
+      ));
+    } else if (isAuthenticated && !isLoading) {
       getAppointments(format(selectedDate, "yyyy-MM-dd")).then(setAppointments);
     }
-  }, [selectedDate, isAuthenticated, isLoading]);
+  }, [selectedDate, isAuthenticated, isLoading, isMockMode]);
 
   const handlePrevDay = () => {
     setSelectedDate((prev) => subDays(prev, 1));
@@ -190,9 +280,13 @@ export default function CalendarPage() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadData();
-    if (googleSession?.accessToken) {
-      await loadGoogleCalendar();
+    if (isMockMode) {
+      loadMockData();
+    } else {
+      await loadData();
+      if (googleSession?.accessToken) {
+        await loadGoogleCalendar();
+      }
     }
     setIsRefreshing(false);
   };
@@ -294,7 +388,7 @@ export default function CalendarPage() {
   };
 
   // Show loading while checking auth
-  if (authLoading) {
+  if (!isMockMode && authLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <RefreshCw className="w-8 h-8 animate-spin text-primary" />
@@ -335,13 +429,13 @@ export default function CalendarPage() {
             <User className="w-8 h-8 text-gray-400" />
           </div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            No team members yet
+            {t("noTeamMembers")}
           </h3>
           <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto mb-6">
-            Add team members (doctors/agents) to start scheduling appointments. You can do this from the Settings page.
+            {t("addTeamMembers")}
           </p>
           <Button onClick={() => router.push("/dashboard/settings")}>
-            Go to Settings
+            {t("goToSettings")}
           </Button>
         </div>
       </div>
@@ -353,9 +447,9 @@ export default function CalendarPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Calendar CRM</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t("title")}</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
-            Manage appointments across all team members with real-time updates.
+            {isMockMode ? t("mockPreview") : t("subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -367,7 +461,7 @@ export default function CalendarPage() {
               className="dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300"
             >
               <Unlink className="w-4 h-4 mr-2" />
-              Disconnect Google
+              {t("disconnectGoogle")}
             </Button>
           ) : (
             <Button
@@ -381,7 +475,7 @@ export default function CalendarPage() {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
-              Connect Google Calendar
+              {t("connectGoogle")}
             </Button>
           )}
           <Button
@@ -412,7 +506,7 @@ export default function CalendarPage() {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
               </svg>
               <h3 className="font-semibold text-gray-900 dark:text-white">
-                Google Calendar ({googleAppointments.length} events)
+                {t("googleCalendar")} ({googleAppointments.length} {t("events")})
               </h3>
               {isLoadingGoogle && <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />}
             </div>
@@ -422,7 +516,7 @@ export default function CalendarPage() {
               onClick={() => setShowGoogleCalendar(!showGoogleCalendar)}
               className="text-gray-500"
             >
-              {showGoogleCalendar ? "Hide" : "Show"}
+              {showGoogleCalendar ? t("hide") : t("show")}
             </Button>
           </div>
           
@@ -790,3 +884,17 @@ export default function CalendarPage() {
     </div>
   );
 }
+
+function CalendarPageContent() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <CalendarPage />
+    </Suspense>
+  );
+}
+
+export default CalendarPageContent;
