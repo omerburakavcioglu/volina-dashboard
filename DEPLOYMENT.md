@@ -26,7 +26,7 @@
 **"Linked to another Vercel account" uyarısı için TXT kaydı (zorunlu):**  
 Vercel’de bu uyarı çıkıyorsa GoDaddy’da bir **TXT** kaydı daha ekle: **Type** `TXT`, **Name** `_vercel`, **Value** Vercel’deki TXT satırının tamamı (`vc-domain-verify=dashboard.volina.ai,...` — Copy ile kopyala). Doğrulama sonrası TXT’yi silebilirsin.
 
-### 2b. Vercel’de domain ekleme
+### 2b. Vercel’de domain eklemek
 
 - [ ] Vercel Dashboard → **volina-dashboard** projesi → **Settings** → **Domains** → **Add** → `dashboard.volina.ai` yaz → **Add**.
 - DNS yayılımı 5–30 dakika sürebilir; Vercel doğrulayınca yeşil tik gelir.
