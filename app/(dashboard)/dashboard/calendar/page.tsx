@@ -121,11 +121,11 @@ function CalendarPage() {
     { 
       id: "1", 
       user_id: "mock-user",
-      name: "Dr. John Smith", 
+      name: "Dr. Jack Smith", 
       specialty: "General Practice",
       color_code: "#0055FF",
       avatar_url: null,
-      email: "john@example.com", 
+      email: "jack@example.com", 
       phone: "+1 234 567 8900",
       is_active: true,
       created_at: new Date().toISOString(),
