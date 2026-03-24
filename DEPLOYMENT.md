@@ -11,7 +11,7 @@
 
 ## 2. Domain Configuration (GoDaddy + Vercel)
 
-### 2a. GoDaddy’da CNAME ekleme (volina.ai → GoDaddy) abc
+### 2a. GoDaddy’da CNAME ekleme (volina.ai → GoDaddy) abc avc
 
 1. [godaddy.com](https://www.godaddy.com) → **My Products** → **volina.ai** → **DNS** (veya **Manage DNS**).
 2. **Records** bölümünde **Add** / **Add New Record**.
