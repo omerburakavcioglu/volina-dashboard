@@ -53,7 +53,8 @@ export async function POST(request: NextRequest) {
   let leadsQuery = (supabase as any)
     .from("leads")
     .select("id, phone, full_name, email, language")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .eq("status", "new");
 
   if (leadIds && leadIds.length > 0) {
     leadsQuery = leadsQuery.in("id", leadIds);

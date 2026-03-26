@@ -279,16 +279,16 @@ export function useFunnelNewLeadCount(userId: string | null) {
     (async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/dashboard/leads?userId=${userId}&page=1&pageSize=1`);
+        const res = await fetch(`/api/dashboard/leads?userId=${userId}&status=new&page=1&pageSize=1`);
         const data = await res.json();
-        const totalLeads = data.total || 0;
+        const newLeads = data.pagination?.total ?? data.stats?.newLeads ?? 0;
 
         const funnelRes = await fetch(`/api/funnel/stats?userId=${userId}`);
         const funnelData = await funnelRes.json();
         const inFunnel = funnelData.metrics?.active_leads || 0;
         const archived = funnelData.archived_count || 0;
 
-        setCount(Math.max(0, totalLeads - inFunnel - archived));
+        setCount(Math.max(0, newLeads - inFunnel - archived));
       } catch (err) {
         console.error("[useFunnelNewLeadCount]", err);
       } finally {
