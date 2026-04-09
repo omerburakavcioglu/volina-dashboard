@@ -3,7 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 // Stage → actions to schedule when a lead enters that stage
-const STAGE_ENTRY_ACTIONS: Record<string, Array<{ action_type: string; delay_days: number }>> = {
+export const STAGE_ENTRY_ACTIONS: Record<string, Array<{ action_type: string; delay_days: number }>> = {
   DAY0_AI_CALL: [{ action_type: "ai_call", delay_days: 0 }],
   NO_ANSWER_WHATSAPP_INTRO: [{ action_type: "whatsapp_message", delay_days: 0 }],
   NO_ANSWER_DAY1: [{ action_type: "whatsapp_message", delay_days: 0 }],

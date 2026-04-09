@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase";
 export async function GET(request: NextRequest) {
   const userId = request.nextUrl.searchParams.get("userId");
   const stage = request.nextUrl.searchParams.get("stage"); // simple_stage filter
+  const stageId = request.nextUrl.searchParams.get("stageId"); // exact stage UUID filter
   const page = parseInt(request.nextUrl.searchParams.get("page") || "1", 10);
   const pageSize = parseInt(request.nextUrl.searchParams.get("pageSize") || "50", 10);
   const search = request.nextUrl.searchParams.get("search") || "";
@@ -40,7 +41,9 @@ export async function GET(request: NextRequest) {
     .eq("user_id", userId)
     .in("status", ["active", "paused"]);
 
-  if (stage) {
+  if (stageId) {
+    query = query.eq("current_stage_id", stageId);
+  } else if (stage) {
     query = query.eq("funnel_stages.simple_stage", stage);
   }
 
