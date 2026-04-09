@@ -222,7 +222,7 @@ export function mapCallResultToFunnelCondition(
   endedReason: string,
   evaluationOutcome?: string,
   evaluationScore?: number | null,
-): "call_result_hard" | "call_result_soft" | "call_result_no_answer" {
+): "call_result_hot" | "call_result_soft" | "call_result_hard" | "call_result_no_answer" {
   const reason = (endedReason || "").toLowerCase();
 
   if (
@@ -235,15 +235,16 @@ export function mapCallResultToFunnelCondition(
     return "call_result_no_answer";
   }
 
+  // Score >= 8: hot lead — skip waiting stages, go directly to LIVE_TRANSFER
+  if (evaluationScore !== null && evaluationScore !== undefined && evaluationScore >= 8) {
+    return "call_result_hot";
+  }
+
   if (evaluationOutcome) {
     const o = evaluationOutcome.toLowerCase();
+    if (o === "appointment_set") return "call_result_hot";
     if (o === "not_interested" || o === "rejected") return "call_result_hard";
-    if (
-      o === "interested" ||
-      o === "appointment_set" ||
-      o === "callback_requested"
-    )
-      return "call_result_soft";
+    if (o === "interested" || o === "callback_requested") return "call_result_soft";
   }
 
   if (evaluationScore !== null && evaluationScore !== undefined) {

@@ -783,7 +783,12 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
         let nextStageName: string | null = null;
         let nextBranch: string | null = fl.branch;
 
-        if (currentStageName === "DAY0_AI_CALL") {
+        // Score >= 8 on ANY calling node → direct LIVE_TRANSFER (skip waiting stages)
+        if (funnelCondition === "call_result_hot") {
+          nextStageName = "LIVE_TRANSFER";
+          nextBranch = "main";
+          console.log(`[funnel] HOT lead (score>=8) from ${currentStageName} → LIVE_TRANSFER directly`);
+        } else if (currentStageName === "DAY0_AI_CALL") {
           if (funnelCondition === "call_result_hard") {
             nextStageName = "HARD_WAITING";
             nextBranch = "hard";
