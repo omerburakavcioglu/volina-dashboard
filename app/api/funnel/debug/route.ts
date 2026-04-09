@@ -1,7 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
+import { executeFunnelCall } from "@/lib/funnel-actions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+// POST: manually trigger one pending call and return the exact error/result
+export async function POST(request: NextRequest) {
+  const userId = request.nextUrl.searchParams.get("userId");
+  if (!userId) {
+    return NextResponse.json({ error: "userId is required" }, { status: 400 });
+  }
+
+  const supabase = createAdminClient();
+
+  // Get the first pending ai_call schedule
+  const { data: pending } = await (supabase as any)
+    .from("funnel_schedules")
+    .select("*, funnel_leads(id, lead_id, user_id, metadata, current_stage_id)")
+    .eq("user_id", userId)
+    .eq("status", "pending")
+    .eq("action_type", "ai_call")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single();
+
+  if (!pending) {
+    return NextResponse.json({ error: "No pending ai_call schedules found" });
+  }
+
+  // Load profile
+  const { data: profile } = await (supabase as any)
+    .from("profiles")
+    .select("vapi_assistant_id, vapi_phone_number_id, vapi_private_key, whatsapp_phone_number_id, whatsapp_access_token, company_name, phone")
+    .eq("id", userId)
+    .single();
+
+  const vapiDiag = {
+    profile_vapi_assistant_id: profile?.vapi_assistant_id || null,
+    profile_vapi_phone_number_id: profile?.vapi_phone_number_id || null,
+    profile_vapi_private_key_length: profile?.vapi_private_key ? profile.vapi_private_key.length : 0,
+    env_VAPI_PRIVATE_KEY_length: process.env.VAPI_PRIVATE_KEY?.length || 0,
+    env_VAPI_ASSISTANT_ID: process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || null,
+    env_VAPI_PHONE_NUMBER_ID: process.env.VAPI_PHONE_NUMBER_ID || null,
+    lead_phone_in_payload: pending.payload?.lead_phone || null,
+  };
+
+  // Attempt to make the actual call
+  const scheduleArg = {
+    id: pending.id,
+    action_type: pending.action_type,
+    user_id: userId,
+    funnel_lead_id: pending.funnel_leads?.id || pending.funnel_lead_id,
+    payload: pending.payload || {},
+  };
+
+  const result = await executeFunnelCall(scheduleArg, profile || {});
+
+  return NextResponse.json({
+    schedule_id: pending.id,
+    vapi_diagnostics: vapiDiag,
+    call_result: result,
+  });
+}
 
 export async function GET(request: NextRequest) {
   const userId = request.nextUrl.searchParams.get("userId");
