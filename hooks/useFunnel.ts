@@ -77,6 +77,16 @@ export function useFunnelConfig(userId: string | null) {
     await fetchConfig();
   }, [userId, fetchConfig]);
 
+  const resetFunnel = useCallback(async () => {
+    if (!userId) return null;
+    const res = await fetch(`/api/funnel/reset?userId=${userId}`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    await fetchConfig();
+    return data;
+  }, [userId, fetchConfig]);
+
   return {
     config,
     isLoading,
@@ -84,6 +94,7 @@ export function useFunnelConfig(userId: string | null) {
     startFunnel,
     pauseFunnel,
     resumeFunnel,
+    resetFunnel,
     refetch: fetchConfig,
   };
 }

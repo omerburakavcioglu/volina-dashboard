@@ -21,7 +21,7 @@ export default function FunnelDashboard() {
   const { user } = useAuth();
   const userId = user?.id || null;
 
-  const { config, isRunning, startFunnel, pauseFunnel, resumeFunnel } = useFunnelConfig(userId);
+  const { config, isRunning, startFunnel, pauseFunnel, resumeFunnel, resetFunnel } = useFunnelConfig(userId);
   const { stats, isLoading: statsLoading, refetch: refetchStats } = useFunnelStats(userId);
   const { items: activityItems, isLoading: activityLoading } = useFunnelActivity(userId);
   const { count: newLeadCount } = useFunnelNewLeadCount(userId);
@@ -53,6 +53,11 @@ export default function FunnelDashboard() {
     [startFunnel, refetchStats]
   );
 
+  const handleReset = useCallback(async () => {
+    await resetFunnel();
+    refetchStats();
+  }, [resetFunnel, refetchStats]);
+
   const handleStageClick = useCallback((stage: string) => {
     setSelectedStage((prev) => (prev === stage ? null : (stage as SimpleStage)));
   }, []);
@@ -67,6 +72,7 @@ export default function FunnelDashboard() {
         onStart={handleStart}
         onPause={pauseFunnel}
         onResume={resumeFunnel}
+        onReset={handleReset}
       />
 
       {/* Section B: Key Metrics */}
