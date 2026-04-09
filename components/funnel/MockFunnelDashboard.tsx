@@ -69,6 +69,7 @@ export default function MockFunnelDashboard() {
         onStart={handleStart}
         onPause={pauseFunnel}
         onResume={resumeFunnel}
+        onReset={async () => {}}
       />
 
       {/* Section B: Key Metrics */}

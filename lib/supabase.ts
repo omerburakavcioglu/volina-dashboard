@@ -33,29 +33,15 @@ export interface Database {
   };
 }
 
-// Environment variables - check if they exist
-const supabaseUrl = typeof window !== 'undefined'
-  ? process.env.NEXT_PUBLIC_SUPABASE_URL
-  : process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = typeof window !== 'undefined'
-  ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  : process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Environment variables
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Safely create Supabase client
-let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null;
-
-function initializeSupabase() {
-  if (supabaseInstance) return supabaseInstance;
-
-  const url = supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = supabaseAnonKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !key) {
-    console.warn('[Supabase] Missing URL or Key. URL:', !!url, 'Key:', !!key);
-    throw new Error('supabaseUrl is required.');
-  }
-
-  supabaseInstance = createClient<Database>(url, key, {
+// Create Supabase client for browser/client-side usage
+export const supabase = createClient<Database>(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -66,18 +52,8 @@ function initializeSupabase() {
         eventsPerSecond: 10,
       },
     },
-  });
-
-  return supabaseInstance;
-}
-
-// Lazy initialization - only initialize when actually used
-// This ensures Supabase is only loaded when properties are accessed
-export const supabase = new Proxy({} as ReturnType<typeof createClient<Database>>, {
-  get: (target, prop) => {
-    return (initializeSupabase() as any)[prop];
-  },
-});
+  }
+);
 
 // Create admin client for server-side operations
 export function createAdminClient() {
