@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { calculateNextCallSlot } from "@/lib/funnel-engine";
+import { inferTimezoneFromPhone } from "@/lib/phone-utils";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -94,6 +94,8 @@ export async function POST(request: NextRequest) {
   let processed = 0;
 
   for (const lead of leads) {
+    const leadTz = inferTimezoneFromPhone(lead.phone);
+
     const { data: funnelLead, error: insertError } = await (supabase as any)
       .from("funnel_leads")
       .insert({
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
         entered_funnel_at: new Date().toISOString(),
         entered_current_stage_at: new Date().toISOString(),
         next_action_type: "ai_call",
-        metadata: { timezone: "Europe/London" },
+        metadata: { timezone: leadTz },
       })
       .select("id")
       .single();
@@ -115,7 +117,6 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // Event log
     await (supabase as any).from("funnel_events").insert({
       user_id: userId,
       funnel_lead_id: funnelLead.id,
@@ -125,8 +126,7 @@ export async function POST(request: NextRequest) {
       actor: "system",
     });
 
-    // Schedule AI call
-    const callTime = calculateNextCallSlot("Europe/London", callingHoursStart, callingHoursEnd);
+    const callTime = new Date().toISOString();
 
     await (supabase as any).from("funnel_schedules").insert({
       user_id: userId,
@@ -134,9 +134,15 @@ export async function POST(request: NextRequest) {
       stage_id: day0Stage.id,
       action_type: "ai_call",
       scheduled_at: callTime,
-      lead_timezone: "Europe/London",
+      lead_timezone: leadTz,
       status: "pending",
-      payload: { lead_name: lead.full_name, lead_phone: lead.phone },
+      payload: {
+        lead_id: lead.id,
+        lead_name: lead.full_name,
+        lead_phone: lead.phone,
+        lead_email: lead.email || "",
+        lead_language: lead.language || "en",
+      },
     });
 
     await (supabase as any).from("funnel_leads").update({

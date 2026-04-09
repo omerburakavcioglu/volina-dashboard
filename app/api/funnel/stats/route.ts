@@ -103,11 +103,35 @@ export async function GET(request: NextRequest) {
     conversions,
   };
 
+  // Unreachable: active leads stuck in no_answer branch stages
+  const { data: noAnswerStageIds } = await (supabase as any)
+    .from("funnel_stages")
+    .select("id")
+    .eq("user_id", userId)
+    .in("name", [
+      "NO_ANSWER_WHATSAPP_INTRO",
+      "NO_ANSWER_DAY1",
+      "NO_ANSWER_DAY2",
+      "NO_ANSWER_DAY15",
+    ]);
+
+  let unreachableCountVal = 0;
+  if (noAnswerStageIds && noAnswerStageIds.length > 0) {
+    const stageIdList = (noAnswerStageIds as { id: string }[]).map((s) => s.id);
+    const { count: naCount } = await (supabase as any)
+      .from("funnel_leads")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .in("current_stage_id", stageIdList);
+    unreachableCountVal = naCount || 0;
+  }
+
   const response: FunnelStatsResponse = {
     buckets,
     metrics,
     archived_count: archivedCount || 0,
-    unreachable_count: 0,
+    unreachable_count: unreachableCountVal,
   };
 
   return NextResponse.json({ success: true, ...response });

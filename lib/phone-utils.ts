@@ -84,6 +84,63 @@ export function isValidE164(phoneNumber: string): boolean {
 }
 
 /**
+ * Infers a timezone from an E.164 phone number based on country calling code.
+ * Falls back to "Europe/London" if the prefix is unrecognized.
+ */
+const PHONE_PREFIX_TZ: Array<[string, string]> = [
+  ["+90", "Europe/Istanbul"],
+  ["+44", "Europe/London"],
+  ["+49", "Europe/Berlin"],
+  ["+33", "Europe/Paris"],
+  ["+34", "Europe/Madrid"],
+  ["+39", "Europe/Rome"],
+  ["+31", "Europe/Amsterdam"],
+  ["+32", "Europe/Brussels"],
+  ["+41", "Europe/Zurich"],
+  ["+43", "Europe/Vienna"],
+  ["+46", "Europe/Stockholm"],
+  ["+47", "Europe/Oslo"],
+  ["+45", "Europe/Copenhagen"],
+  ["+48", "Europe/Warsaw"],
+  ["+351", "Europe/Lisbon"],
+  ["+353", "Europe/Dublin"],
+  ["+30", "Europe/Athens"],
+  ["+7", "Europe/Moscow"],
+  ["+380", "Europe/Kyiv"],
+  ["+40", "Europe/Bucharest"],
+  ["+1", "America/New_York"],
+  ["+52", "America/Mexico_City"],
+  ["+55", "America/Sao_Paulo"],
+  ["+54", "America/Argentina/Buenos_Aires"],
+  ["+57", "America/Bogota"],
+  ["+56", "America/Santiago"],
+  ["+91", "Asia/Kolkata"],
+  ["+86", "Asia/Shanghai"],
+  ["+81", "Asia/Tokyo"],
+  ["+82", "Asia/Seoul"],
+  ["+971", "Asia/Dubai"],
+  ["+966", "Asia/Riyadh"],
+  ["+972", "Asia/Jerusalem"],
+  ["+962", "Asia/Amman"],
+  ["+961", "Asia/Beirut"],
+  ["+20", "Africa/Cairo"],
+  ["+27", "Africa/Johannesburg"],
+  ["+234", "Africa/Lagos"],
+  ["+61", "Australia/Sydney"],
+  ["+64", "Pacific/Auckland"],
+];
+
+export function inferTimezoneFromPhone(phone: string | null | undefined): string {
+  if (!phone) return "Europe/London";
+  const cleaned = phone.replace(/[\s\-\(\)]/g, "");
+  const normalized = cleaned.startsWith("+") ? cleaned : "+" + cleaned;
+  for (const [prefix, tz] of PHONE_PREFIX_TZ) {
+    if (normalized.startsWith(prefix)) return tz;
+  }
+  return "Europe/London";
+}
+
+/**
  * Validates and normalizes a phone number, throwing an error if invalid
  * @param input - Raw phone number input
  * @param defaultCountry - Default country code (default: "TR")

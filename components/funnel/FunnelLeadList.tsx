@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { X, Search, Phone, Mail, Clock, ChevronRight } from "lucide-react";
+import { useState, useCallback } from "react";
+import { X, Search, Phone, Mail, Clock, ChevronRight, Stethoscope, Loader2 } from "lucide-react";
 import { useFunnelLeadsByStage } from "@/hooks/useFunnel";
 import type { SimpleStage, FunnelLeadWithInfo } from "@/lib/types-funnel";
 
@@ -32,9 +32,15 @@ function timeAgo(dateStr: string): string {
   return `${days}d`;
 }
 
+const MANUAL_TRANSITIONS: Record<string, { label: string; targetStage: string; branch: string | null }> = {
+  "Live Transfer": { label: "Confirm Treatment", targetStage: "TREATMENT", branch: "post_treatment" },
+  "Urgent Alert": { label: "Acknowledge", targetStage: "TREATMENT", branch: "post_treatment" },
+};
+
 export default function FunnelLeadList({ userId, stage, onClose, overrideLeads, overrideTotal }: FunnelLeadListProps) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [transitioning, setTransitioning] = useState<string | null>(null);
   const fetched = useFunnelLeadsByStage(userId, stage, page, 30, search);
   const useOverride = overrideLeads != null && overrideTotal != null;
   const leads = useOverride ? overrideLeads : fetched.leads;
@@ -42,6 +48,28 @@ export default function FunnelLeadList({ userId, stage, onClose, overrideLeads, 
   const isLoading = useOverride ? false : fetched.isLoading;
 
   const totalPages = Math.ceil(total / 30);
+
+  const handleManualTransition = useCallback(async (lead: FunnelLeadWithInfo) => {
+    const action = MANUAL_TRANSITIONS[lead.stage_name];
+    if (!action) return;
+    setTransitioning(lead.id);
+    try {
+      await fetch(`/api/funnel/transition?userId=${userId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          funnelLeadId: lead.id,
+          targetStage: action.targetStage,
+          branch: action.branch,
+        }),
+      });
+      fetched.refetch();
+    } catch (err) {
+      console.error("[FunnelLeadList] Transition error:", err);
+    } finally {
+      setTransitioning(null);
+    }
+  }, [userId, fetched]);
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -131,6 +159,22 @@ export default function FunnelLeadList({ userId, stage, onClose, overrideLeads, 
                     {timeAgo(lead.entered_current_stage_at)}
                   </div>
                 </div>
+
+                {/* Manual transition button */}
+                {MANUAL_TRANSITIONS[lead.stage_name] && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleManualTransition(lead); }}
+                    disabled={transitioning === lead.id}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-xs font-medium transition-colors flex-shrink-0"
+                  >
+                    {transitioning === lead.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Stethoscope className="w-3 h-3" />
+                    )}
+                    {MANUAL_TRANSITIONS[lead.stage_name]?.label}
+                  </button>
+                )}
               </div>
             ))}
           </div>

@@ -13,6 +13,7 @@ const STAGE_ENTRY_ACTIONS: Record<string, Array<{ action_type: string; delay_day
   HARD_RE_ENGAGEMENT: [{ action_type: "whatsapp_message", delay_days: 0 }],
   HARD_REACQUISITION_CALL: [{ action_type: "ai_call", delay_days: 0 }],
   LIVE_TRANSFER: [{ action_type: "live_transfer_alert", delay_days: 0 }],
+  URGENT_ALERT: [{ action_type: "live_transfer_alert", delay_days: 0 }],
   POST_TREATMENT_DAY7: [{ action_type: "satisfaction_call", delay_days: 0 }],
   REVIEW_AND_REFERRAL: [{ action_type: "whatsapp_message", delay_days: 0 }],
   POST_TREATMENT_DAY30: [{ action_type: "check_in_call", delay_days: 0 }],
@@ -25,11 +26,13 @@ export const TIME_TRANSITIONS: Array<{ from: string; to: string; days: number }>
   { from: "NO_ANSWER_DAY1", to: "NO_ANSWER_DAY2", days: 1 },
   { from: "NO_ANSWER_DAY2", to: "NO_ANSWER_DAY15", days: 13 },
   { from: "NO_ANSWER_DAY15", to: "SOFT_FOLLOWUP", days: 0 },
+  { from: "SOFT_FOLLOWUP", to: "LIVE_TRANSFER", days: 7 },
   { from: "HARD_RE_ENGAGEMENT", to: "HARD_REACQUISITION_CALL", days: 2 },
   { from: "TREATMENT", to: "POST_TREATMENT_DAY7", days: 7 },
   { from: "REVIEW_AND_REFERRAL", to: "POST_TREATMENT_DAY30", days: 23 },
   { from: "POST_TREATMENT_DAY30", to: "RECOVERY_MANAGEMENT", days: 0 },
   { from: "RECOVERY_MANAGEMENT", to: "LOYAL", days: 30 },
+  { from: "RECOVERY_MANAGEMENT", to: "DAY60_STILL_HERE", days: 60 },
 ];
 
 export function getActionsForStage(stageName: string): Array<{ action_type: string; delay_days: number }> {

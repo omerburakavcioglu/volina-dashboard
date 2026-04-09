@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
 import { cleanCallSummary } from "@/lib/utils";
 import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
-import { transitionFunnelLead, mapCallResultToFunnelCondition } from "@/lib/funnel-engine";
+import { transitionFunnelLead, mapCallResultToFunnelCondition, calculateNextCallSlot } from "@/lib/funnel-engine";
 
 interface ParsedEvaluation {
   score: number | null;
@@ -805,6 +805,40 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
             chEnd
           );
           console.log(`[funnel] Transitioned lead ${leadId} from ${currentStageName} to ${nextStageName}`);
+        } else if (currentStageName === "HARD_REACQUISITION_CALL" && funnelCondition === "call_result_no_answer") {
+          const leadTz = (fl.metadata as Record<string, unknown>)?.timezone as string || "Europe/London";
+          const retryAt = calculateNextCallSlot(leadTz, chStart, chEnd);
+
+          const { data: leadRec } = await (supabase as any)
+            .from("leads")
+            .select("phone, full_name, email, language")
+            .eq("id", leadId)
+            .single();
+
+          await (supabase as any).from("funnel_schedules").insert({
+            user_id: fl.user_id,
+            funnel_lead_id: fl.id,
+            stage_id: fl.current_stage_id,
+            action_type: "ai_call",
+            scheduled_at: retryAt,
+            lead_timezone: leadTz,
+            status: "pending",
+            payload: {
+              lead_id: leadId,
+              lead_name: leadRec?.full_name || "Unknown",
+              lead_phone: leadRec?.phone || "",
+              lead_email: leadRec?.email || "",
+              lead_language: leadRec?.language || "en",
+              stage_name: "HARD_REACQUISITION_CALL",
+            },
+          });
+
+          await (supabase as any).from("funnel_leads").update({
+            next_action_at: retryAt,
+            next_action_type: "ai_call",
+          }).eq("id", fl.id);
+
+          console.log(`[funnel] Rescheduled HARD_REACQUISITION_CALL retry for lead ${leadId} at ${retryAt}`);
         }
 
         // Log call result event

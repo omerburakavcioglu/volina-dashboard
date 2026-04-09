@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS funnel_stages (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_funnel_stages_user ON funnel_stages(user_id);
-CREATE UNIQUE INDEX idx_funnel_stages_user_name ON funnel_stages(user_id, name);
+CREATE INDEX IF NOT EXISTS idx_funnel_stages_user ON funnel_stages(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_funnel_stages_user_name ON funnel_stages(user_id, name);
 
 -- 2. funnel_transitions
 CREATE TABLE IF NOT EXISTS funnel_transitions (
@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS funnel_transitions (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_funnel_transitions_user ON funnel_transitions(user_id);
-CREATE INDEX idx_funnel_transitions_from ON funnel_transitions(from_stage_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_transitions_user ON funnel_transitions(user_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_transitions_from ON funnel_transitions(from_stage_id);
 
 -- 3. funnel_leads
 CREATE TABLE IF NOT EXISTS funnel_leads (
@@ -57,10 +57,10 @@ CREATE TABLE IF NOT EXISTS funnel_leads (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_funnel_leads_user ON funnel_leads(user_id);
-CREATE INDEX idx_funnel_leads_status ON funnel_leads(user_id, status);
-CREATE INDEX idx_funnel_leads_stage ON funnel_leads(current_stage_id);
-CREATE INDEX idx_funnel_leads_lead ON funnel_leads(lead_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_leads_user ON funnel_leads(user_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_leads_status ON funnel_leads(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_funnel_leads_stage ON funnel_leads(current_stage_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_leads_lead ON funnel_leads(lead_id);
 
 -- 4. funnel_events
 CREATE TABLE IF NOT EXISTS funnel_events (
@@ -75,9 +75,9 @@ CREATE TABLE IF NOT EXISTS funnel_events (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_funnel_events_user ON funnel_events(user_id);
-CREATE INDEX idx_funnel_events_lead ON funnel_events(funnel_lead_id);
-CREATE INDEX idx_funnel_events_created ON funnel_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_user ON funnel_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_lead ON funnel_events(funnel_lead_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_events_created ON funnel_events(user_id, created_at DESC);
 
 -- 5. funnel_schedules
 CREATE TABLE IF NOT EXISTS funnel_schedules (
@@ -96,9 +96,9 @@ CREATE TABLE IF NOT EXISTS funnel_schedules (
   executed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_funnel_schedules_pending ON funnel_schedules(status, scheduled_at) WHERE status = 'pending';
-CREATE INDEX idx_funnel_schedules_user ON funnel_schedules(user_id);
-CREATE INDEX idx_funnel_schedules_lead ON funnel_schedules(funnel_lead_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_schedules_pending ON funnel_schedules(status, scheduled_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_funnel_schedules_user ON funnel_schedules(user_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_schedules_lead ON funnel_schedules(funnel_lead_id);
 
 -- 6. funnel_message_templates
 CREATE TABLE IF NOT EXISTS funnel_message_templates (
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS funnel_message_templates (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX idx_funnel_templates_user ON funnel_message_templates(user_id);
+CREATE INDEX IF NOT EXISTS idx_funnel_templates_user ON funnel_message_templates(user_id);
 
 -- 7. funnel_config
 CREATE TABLE IF NOT EXISTS funnel_config (
@@ -143,27 +143,46 @@ ALTER TABLE funnel_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE funnel_message_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE funnel_config ENABLE ROW LEVEL SECURITY;
 
+-- Policies: drop first so re-running this migration does not fail
+DROP POLICY IF EXISTS "Users can view own funnel_stages" ON funnel_stages;
+DROP POLICY IF EXISTS "Users can insert own funnel_stages" ON funnel_stages;
+DROP POLICY IF EXISTS "Users can update own funnel_stages" ON funnel_stages;
 CREATE POLICY "Users can view own funnel_stages" ON funnel_stages FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own funnel_stages" ON funnel_stages FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own funnel_stages" ON funnel_stages FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view own funnel_transitions" ON funnel_transitions;
+DROP POLICY IF EXISTS "Users can insert own funnel_transitions" ON funnel_transitions;
 CREATE POLICY "Users can view own funnel_transitions" ON funnel_transitions FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own funnel_transitions" ON funnel_transitions FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view own funnel_leads" ON funnel_leads;
+DROP POLICY IF EXISTS "Users can insert own funnel_leads" ON funnel_leads;
+DROP POLICY IF EXISTS "Users can update own funnel_leads" ON funnel_leads;
 CREATE POLICY "Users can view own funnel_leads" ON funnel_leads FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own funnel_leads" ON funnel_leads FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own funnel_leads" ON funnel_leads FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view own funnel_events" ON funnel_events;
+DROP POLICY IF EXISTS "Users can insert own funnel_events" ON funnel_events;
 CREATE POLICY "Users can view own funnel_events" ON funnel_events FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own funnel_events" ON funnel_events FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view own funnel_schedules" ON funnel_schedules;
+DROP POLICY IF EXISTS "Users can insert own funnel_schedules" ON funnel_schedules;
+DROP POLICY IF EXISTS "Users can update own funnel_schedules" ON funnel_schedules;
 CREATE POLICY "Users can view own funnel_schedules" ON funnel_schedules FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own funnel_schedules" ON funnel_schedules FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own funnel_schedules" ON funnel_schedules FOR UPDATE USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view own funnel_templates" ON funnel_message_templates;
+DROP POLICY IF EXISTS "Users can manage own funnel_templates" ON funnel_message_templates;
 CREATE POLICY "Users can view own funnel_templates" ON funnel_message_templates FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can manage own funnel_templates" ON funnel_message_templates FOR ALL USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can view own funnel_config" ON funnel_config;
+DROP POLICY IF EXISTS "Users can insert own funnel_config" ON funnel_config;
+DROP POLICY IF EXISTS "Users can update own funnel_config" ON funnel_config;
 CREATE POLICY "Users can view own funnel_config" ON funnel_config FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own funnel_config" ON funnel_config FOR INSERT WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Users can update own funnel_config" ON funnel_config FOR UPDATE USING (auth.uid() = user_id);
@@ -172,8 +191,25 @@ CREATE POLICY "Users can update own funnel_config" ON funnel_config FOR UPDATE U
 -- Enable Realtime on key tables
 -- ===========================================
 
-ALTER PUBLICATION supabase_realtime ADD TABLE funnel_events;
-ALTER PUBLICATION supabase_realtime ADD TABLE funnel_leads;
+-- Skip if table is already in the publication (re-run safe)
+DO $pub$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE funnel_events;
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM LIKE '%already member%' OR SQLERRM LIKE '%already exists%' THEN NULL;
+    ELSE RAISE;
+    END IF;
+END $pub$;
+DO $pub$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE funnel_leads;
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLERRM LIKE '%already member%' OR SQLERRM LIKE '%already exists%' THEN NULL;
+    ELSE RAISE;
+    END IF;
+END $pub$;
 
 -- ===========================================
 -- Seed Function: call with your user_id
@@ -188,7 +224,11 @@ DECLARE
   s_live UUID; s_archive UUID; s_d60 UUID; s_treat UUID; s_pt7 UUID;
   s_review UUID; s_urgent UUID; s_pt30 UUID; s_recovery UUID; s_loyal UUID;
 BEGIN
-  -- Delete existing seed data for this user (idempotent)
+  -- Delete existing seed data for this user (idempotent).
+  -- Order matters: funnel_leads references funnel_stages — must remove children first.
+  DELETE FROM funnel_schedules WHERE user_id = p_user_id;
+  DELETE FROM funnel_events WHERE user_id = p_user_id;
+  DELETE FROM funnel_leads WHERE user_id = p_user_id;
   DELETE FROM funnel_message_templates WHERE user_id = p_user_id;
   DELETE FROM funnel_transitions WHERE user_id = p_user_id;
   DELETE FROM funnel_stages WHERE user_id = p_user_id;
