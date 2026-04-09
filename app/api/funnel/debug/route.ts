@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
     .eq("id", userId)
     .single();
 
+  const effAssistant = (profile?.vapi_assistant_id || process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || "").trim();
+  const effPhoneId = (profile?.vapi_phone_number_id || process.env.VAPI_PHONE_NUMBER_ID || "").trim();
   const vapiDiag = {
     profile_vapi_assistant_id: profile?.vapi_assistant_id || null,
     profile_vapi_phone_number_id: profile?.vapi_phone_number_id || null,
@@ -42,6 +44,8 @@ export async function POST(request: NextRequest) {
     env_VAPI_PRIVATE_KEY_length: process.env.VAPI_PRIVATE_KEY?.length || 0,
     env_VAPI_ASSISTANT_ID: process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || null,
     env_VAPI_PHONE_NUMBER_ID: process.env.VAPI_PHONE_NUMBER_ID || null,
+    effective_assistant_id_trimmed: effAssistant || null,
+    effective_phone_number_id_trimmed: effPhoneId || null,
     lead_phone_in_payload: pending.payload?.lead_phone || null,
   };
 

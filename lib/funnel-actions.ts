@@ -45,9 +45,18 @@ export async function executeFunnelCall(
   schedule: { id: string; action_type: string; user_id: string; funnel_lead_id: string; payload: SchedulePayload },
   profile: FunnelProfile,
 ): Promise<ActionResult> {
-  const assistantId = profile.vapi_assistant_id || VAPI_ASSISTANT_ID;
-  const phoneNumberId = profile.vapi_phone_number_id || VAPI_PHONE_NUMBER_ID;
-  const apiKey = (profile.vapi_private_key?.trim() || "") || VAPI_API_KEY;
+  // Trim everywhere: Vercel/Supabase copy-paste often adds trailing \n which breaks VAPI UUID validation.
+  const assistantId = (profile.vapi_assistant_id || VAPI_ASSISTANT_ID).trim();
+  const phoneNumberId = (profile.vapi_phone_number_id || VAPI_PHONE_NUMBER_ID).trim();
+  const apiKey = (profile.vapi_private_key?.trim() || VAPI_API_KEY.trim() || "");
+
+  if (phoneNumberId === "placeholder-update-me" || phoneNumberId.startsWith("placeholder")) {
+    return {
+      success: false,
+      error:
+        "VAPI_PHONE_NUMBER_ID is still a placeholder. Set a real phone number UUID in Vercel env or profiles.vapi_phone_number_id.",
+    };
+  }
 
   if (!apiKey || !assistantId || !phoneNumberId) {
     return { success: false, error: "VAPI not configured (missing assistantId, phoneNumberId, or apiKey)" };
