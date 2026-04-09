@@ -89,14 +89,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Load profile once per user (cached)
+    // Load profile once per user (cached) — uses RPC to bypass PostgREST column cache
     if (!profileCache[userId]) {
-      const { data: profile } = await (supabase as any)
-        .from("profiles")
-        .select("vapi_assistant_id, vapi_phone_number_id, vapi_private_key, whatsapp_phone_number_id, whatsapp_access_token, company_name, phone")
-        .eq("id", userId)
-        .single();
-      profileCache[userId] = profile || {};
+      const { data: rpcResult } = await (supabase as any)
+        .rpc("get_vapi_config", { p_user_id: userId });
+      profileCache[userId] = rpcResult || {};
     }
     const profile = profileCache[userId];
 

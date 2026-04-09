@@ -28,12 +28,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "No pending ai_call schedules found" });
   }
 
-  // Load profile
+  // Load profile via RPC to bypass PostgREST column cache
   const { data: profile } = await (supabase as any)
-    .from("profiles")
-    .select("vapi_assistant_id, vapi_phone_number_id, vapi_private_key, whatsapp_phone_number_id, whatsapp_access_token, company_name, phone")
-    .eq("id", userId)
-    .single();
+    .rpc("get_vapi_config", { p_user_id: userId });
 
   const effAssistant = (profile?.vapi_assistant_id || process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID || "").trim();
   const effPhoneId = (profile?.vapi_phone_number_id || process.env.VAPI_PHONE_NUMBER_ID || "").trim();
@@ -100,12 +97,9 @@ export async function GET(request: NextRequest) {
     .lte("scheduled_at", now.toISOString())
     .limit(10);
 
-  // 4. Check profile VAPI fields
+  // 4. Check profile VAPI fields via RPC (bypasses PostgREST column cache)
   const { data: profile, error: profErr } = await (supabase as any)
-    .from("profiles")
-    .select("id, vapi_assistant_id, vapi_phone_number_id, vapi_private_key, whatsapp_phone_number_id, whatsapp_access_token, company_name, phone")
-    .eq("id", userId)
-    .single();
+    .rpc("get_vapi_config", { p_user_id: userId });
 
   const vapiStatus = {
     has_assistant_id: !!profile?.vapi_assistant_id,
