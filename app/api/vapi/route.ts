@@ -619,28 +619,28 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     } else {
       console.log("Outreach updated:", outreachId, callResult);
     }
+  }
 
-    // Update lead status based on result
-    if (leadId) {
-      let newLeadStatus = "contacted";
-      if (callResult === "answered_appointment_set") {
-        newLeadStatus = "appointment_scheduled";
-      } else if (callResult === "answered_not_interested") {
-        newLeadStatus = "not_interested";
-      } else if (callResult === "no_answer" || callResult === "busy" || callResult === "voicemail") {
-        newLeadStatus = "unreachable";
-      }
-
-      await supabase
-        .from("leads")
-        .update({
-          status: newLeadStatus,
-          last_contact_date: new Date().toISOString(),
-        } as never)
-        .eq("id", leadId);
-
-      console.log("Lead status updated:", leadId, newLeadStatus);
+  // Update lead status based on call result (works for both outreach AND funnel calls)
+  if (leadId) {
+    let newLeadStatus = "contacted";
+    if (callResult === "answered_appointment_set") {
+      newLeadStatus = "appointment_scheduled";
+    } else if (callResult === "answered_not_interested") {
+      newLeadStatus = "not_interested";
+    } else if (callResult === "no_answer" || callResult === "busy" || callResult === "voicemail") {
+      newLeadStatus = "unreachable";
     }
+
+    await supabase
+      .from("leads")
+      .update({
+        status: newLeadStatus,
+        last_contact_date: new Date().toISOString(),
+      } as never)
+      .eq("id", leadId);
+
+    console.log("Lead status updated:", leadId, newLeadStatus);
   }
 
   // Insert call record into calls table
@@ -704,17 +704,40 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     if (callError) {
       console.error("=== ERROR INSERTING CALL ===");
       console.error("Error:", callError);
-      console.error("Insert Data:", JSON.stringify(insertData, null, 2));
+      console.error("Insert Data keys:", Object.keys(insertData));
       console.error("============================");
+
+      // Retry with minimal fields in case some columns don't exist in the table
+      const minimalInsert = {
+        user_id: userId,
+        vapi_call_id: call.id,
+        recording_url: recordingUrl || null,
+        transcript: transcript || null,
+        summary: cleanedSummary,
+        sentiment,
+        duration,
+        type: callType,
+        caller_phone: call.customer?.number || null,
+        caller_name: leadName || call.customer?.name || null,
+        metadata: {
+          orgId: call.orgId,
+          endedReason: call.endedReason,
+          lead_id: leadId,
+          source: (call.metadata as Record<string, unknown>)?.source || "unknown",
+        },
+      };
+
+      const { error: retryError } = await supabase
+        .from("calls")
+        .insert(minimalInsert as never);
+
+      if (retryError) {
+        console.error("=== RETRY INSERT ALSO FAILED ===", retryError);
+      } else {
+        console.log("=== CALL INSERTED WITH MINIMAL FIELDS ===", call.id);
+      }
     } else {
-      console.log("=== CALL RECORD INSERTED SUCCESSFULLY ===");
-      console.log("Call DB ID:", callData?.id);
-      console.log("VAPI Call ID:", call.id);
-      console.log("User ID:", userId);
-      console.log("Lead ID:", leadId);
-      console.log("Duration:", duration);
-      console.log("Sentiment:", sentiment);
-      console.log("==========================================");
+      console.log("=== CALL RECORD INSERTED ===", callData?.id, "VAPI:", call.id);
     }
   }
 
