@@ -40,7 +40,7 @@ ORDER BY fe.created_at DESC;
 -- =============================================================================
 -- ADIM 2 — calls INSERT (PREVIEW uygunsa; tek başına seçip çalıştır)
 -- =============================================================================
--- Kolon hatası alırsan: assistant_id, evaluation_score veya tags satırlarını
+-- Kolon hatası alırsan: assistant_id veya evaluation_score satırlarını
 -- INSERT listesi ve SELECT listesinden birlikte sil.
 
 WITH tenant AS (
@@ -58,7 +58,6 @@ INSERT INTO calls (
   caller_phone,
   caller_name,
   evaluation_score,
-  tags,
   metadata,
   created_at,
   updated_at
@@ -82,7 +81,6 @@ SELECT DISTINCT ON (fe.payload->>'call_id')
     THEN (fe.payload->>'evaluation_score')::numeric
     ELSE NULL
   END,
-  '{}'::text[],
   jsonb_build_object(
     'source', 'funnel_backfill',
     'funnel_event_id', fe.id::text,
