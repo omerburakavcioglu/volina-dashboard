@@ -46,6 +46,7 @@ import {
 import { format, startOfDay, endOfDay, isWithinInterval, parseISO } from "date-fns";
 import { cn, cleanCallSummary } from "@/lib/utils";
 import { useTranslation, useLanguage } from "@/lib/i18n";
+import { useCallContentTranslation } from "@/hooks/useCallContentTranslation";
 
 // Audio Player Component
 function AudioPlayer({ 
@@ -280,7 +281,29 @@ function AudioPlayer({
     audio.currentTime = Math.max(0, Math.min(duration, audio.currentTime + seconds));
   };
 
+  const { language: playerLang } = useLanguage();
+  const playerMeta = call?.metadata as Record<string, unknown> | undefined;
+  const playerOverrides = playerMeta?.overrides as { summary?: string | null } | undefined;
+  const effectiveSummaryForPlayer =
+    playerOverrides?.summary !== undefined ? playerOverrides.summary : call?.summary ?? null;
+
+  const playerTranslation = useCallContentTranslation({
+    callId: call?.id ?? "",
+    enabled: Boolean(isOpen && playerLang === "tr" && call?.id),
+    language: playerLang,
+    summaryRaw: effectiveSummaryForPlayer,
+    transcriptRaw: null,
+    evaluationSummaryRaw: null,
+  });
+
   if (!call || !call.recording_url) return null;
+
+  const displayPlayerSummary =
+    playerLang === "tr" && playerTranslation.translations?.summary
+      ? cleanCallSummary(playerTranslation.translations.summary)
+      : effectiveSummaryForPlayer
+        ? cleanCallSummary(effectiveSummaryForPlayer)
+        : null;
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const remainingTime = duration - currentTime;
@@ -440,18 +463,20 @@ function AudioPlayer({
           )}
 
           {/* Summary Bubble */}
-          {(() => {
-            const metadata = call.metadata as Record<string, unknown> | undefined;
-            const overrides = metadata?.overrides as { summary?: string | null } | undefined;
-            const effectiveSummary = (overrides?.summary !== undefined) 
-              ? overrides.summary 
-              : call.summary;
-            return effectiveSummary && cleanCallSummary(effectiveSummary) && (
+          {displayPlayerSummary && (
               <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 inline-block max-w-md">
-                <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(effectiveSummary)}</p>
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1 flex items-center gap-2">
+                  {playerLang === "tr" ? "Özet" : "Summary"}
+                  {playerLang === "tr" && playerTranslation.loading && (
+                    <Loader2 className="w-3 h-3 animate-spin text-gray-400" aria-hidden />
+                  )}
+                </p>
+                {playerTranslation.error && playerLang === "tr" && (
+                  <p className="text-xs text-red-500 dark:text-red-400 mb-1">{playerTranslation.error}</p>
+                )}
+                <p className="text-sm text-gray-700 dark:text-gray-300">{displayPlayerSummary}</p>
               </div>
-            );
-          })()}
+            )}
         </div>
       </DialogContent>
     </Dialog>
@@ -1673,6 +1698,27 @@ function CallRow({
     : call.sentiment;
   
   const validSummary = getValidEvaluationSummary(effectiveEvaluationSummary);
+
+  const contentTranslation = useCallContentTranslation({
+    callId: call.id,
+    enabled: expanded && currentLang === "tr",
+    language: currentLang,
+    summaryRaw: effectiveSummary,
+    transcriptRaw: call.transcript,
+    evaluationSummaryRaw: effectiveEvaluationSummary,
+  });
+
+  const displaySummaryBody =
+    currentLang === "tr" && contentTranslation.translations?.summary
+      ? cleanCallSummary(contentTranslation.translations.summary)
+      : effectiveSummary
+        ? cleanCallSummary(effectiveSummary)
+        : null;
+
+  const displayTranscript =
+    currentLang === "tr" && contentTranslation.translations?.transcript
+      ? contentTranslation.translations.transcript
+      : call.transcript;
   
   // Get evaluation metadata (structuredData and evaluationSource already declared above)
   const evaluatedAt = (structuredData as { evaluatedAt?: string } | undefined)?.evaluatedAt;
@@ -1833,12 +1879,18 @@ function CallRow({
         <div className="px-4 sm:px-6 pb-4 bg-gray-50 dark:bg-gray-800/50">
           <div className="sm:ml-12 space-y-4">
             {/* Summary */}
-            {effectiveSummary && cleanCallSummary(effectiveSummary) && (
+            {displaySummaryBody && (
           <div>
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1 flex items-center gap-2">
                   {currentLang === "tr" ? "Özet" : "Summary"}
+                  {currentLang === "tr" && contentTranslation.loading && (
+                    <Loader2 className="w-3 h-3 animate-spin text-gray-400" aria-hidden />
+                  )}
                 </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">{cleanCallSummary(effectiveSummary)}</p>
+                {contentTranslation.error && currentLang === "tr" && (
+                  <p className="text-xs text-red-500 dark:text-red-400 mb-1">{contentTranslation.error}</p>
+                )}
+                <p className="text-sm text-gray-700 dark:text-gray-300">{displaySummaryBody}</p>
           </div>
             )}
             
@@ -1907,7 +1959,12 @@ function CallRow({
             {call.transcript && (
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{callLabels.transcript[currentLang]}</p>
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase flex items-center gap-2">
+                    {callLabels.transcript[currentLang]}
+                    {currentLang === "tr" && contentTranslation.loading && (
+                      <Loader2 className="w-3 h-3 animate-spin text-gray-400" aria-hidden />
+                    )}
+                  </p>
                   <div className="flex items-center gap-2">
                     {evaluatedAt && (
                       <span className="text-xs text-gray-400 dark:text-gray-500">
@@ -1935,7 +1992,10 @@ function CallRow({
                   </div>
                 </div>
                 <div className="text-sm text-gray-700 dark:text-gray-300 max-h-48 overflow-y-auto bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">{call.transcript}</pre>
+                  {contentTranslation.error && currentLang === "tr" && (
+                    <p className="text-xs text-red-500 dark:text-red-400 mb-2">{contentTranslation.error}</p>
+                  )}
+                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm">{displayTranscript}</pre>
                 </div>
               </div>
             )}
