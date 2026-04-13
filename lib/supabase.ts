@@ -62,8 +62,13 @@ export const supabase = createClient<Database>(
 );
 
 // Create admin client for server-side operations
-export function createAdminClient() {
+export function createAdminClient(): any {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "Missing Supabase admin environment variables. Ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set."
+    );
+  }
 
   return createClient<Database>(
     supabaseUrl,

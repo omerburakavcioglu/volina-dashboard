@@ -18,7 +18,7 @@ interface CallRecord {
 }
 
 // Check if tags column exists
-async function checkTagsColumnExists(supabase: ReturnType<typeof createAdminClient>): Promise<boolean> {
+async function checkTagsColumnExists(supabase: any): Promise<boolean> {
   const { error } = await supabase
     .from("calls")
     .select("tags")
@@ -40,7 +40,7 @@ function isFailedConnection(endedReason: string | undefined): boolean {
 // POST - Backfill evaluation scores and tags for existing calls
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createAdminClient();
+    const supabase: any = createAdminClient();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     const forceAll = searchParams.get("forceAll") === "true";
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     }
     
     if (userId) {
-      query = query.eq("user_id", userId);
+      query = (query as any).eq("user_id", userId);
     }
     
     const { data: calls, error: callsError } = await query as { 
@@ -287,7 +287,7 @@ export async function POST(request: NextRequest) {
 // GET - Check how many calls need evaluation
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createAdminClient();
+    const supabase: any = createAdminClient();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
     
@@ -301,7 +301,7 @@ export async function GET(request: NextRequest) {
       .is("evaluation_score", null);
     
     if (userId) {
-      query = query.eq("user_id", userId);
+      query = (query as any).eq("user_id", userId);
     }
     
     const { count, error } = await query;

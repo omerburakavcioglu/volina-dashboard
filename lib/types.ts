@@ -45,6 +45,7 @@ export type AppointmentStatus =
 export interface Call {
   id: string;
   user_id: string;
+  assistant_id?: string | null;
   vapi_call_id: string | null;
   appointment_id: string | null;
   recording_url: string | null;

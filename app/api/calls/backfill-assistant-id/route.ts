@@ -62,7 +62,8 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
 
     // Find calls without assistant_id that have transcripts
-    const { data: callsWithoutAssistant, error: fetchError } = await supabase
+    // Supabase generated types are incomplete for this table in current schema, so use a narrow cast here.
+    const { data: callsWithoutAssistant, error: fetchError } = await (supabase as any)
       .from("calls")
       .select("id, transcript, caller_name, created_at")
       .eq("user_id", userId)
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
 
     // Get user's current assistant_id
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from("profiles")
       .select("vapi_assistant_id")
       .eq("id", userId)
