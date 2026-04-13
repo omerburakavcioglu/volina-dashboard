@@ -141,18 +141,24 @@ function SidebarInner() {
         "h-16 flex items-center border-b border-gray-100 dark:border-gray-700 px-4",
         isCollapsed ? "justify-center" : "gap-2"
       )}>
-        <Image
-          src="/VolinaLogo.png"
-          alt="Volina AI Logo"
-          width={40}
-          height={40}
-          className="h-10 w-auto flex-shrink-0"
-          priority
-        />
-        {!isCollapsed && (
-          <span className="font-semibold text-gray-900 dark:text-white text-lg tracking-tight">
-            Volina<span className="text-primary">AI</span>
-          </span>
+        {isCollapsed ? (
+          <Image
+            src="/favicon.svg"
+            alt="Volina AI Logo"
+            width={32}
+            height={32}
+            className="h-8 w-auto flex-shrink-0"
+            priority
+          />
+        ) : (
+          <Image
+            src="/VolinaLogoFull.png"
+            alt="Volina AI"
+            width={160}
+            height={40}
+            className="h-8 w-auto object-contain"
+            priority
+          />
         )}
       </div>
 
