@@ -247,12 +247,14 @@ function LoginContent() {
 
         {/* Back to home */}
         <div className="mt-6 text-center">
-          <Link
-            href="/"
+          <a
+            href="https://volina.ai"
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
           >
             ← Ana sayfaya dön
-          </Link>
+          </a>
         </div>
       </div>
 
