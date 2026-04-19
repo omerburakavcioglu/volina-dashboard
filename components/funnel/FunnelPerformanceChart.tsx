@@ -109,12 +109,14 @@ export default function FunnelPerformanceChart({ userId, mockData }: FunnelPerfo
             <YAxis tick={{ fontSize: 11 }} stroke="#9CA3AF" />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#1F2937",
-                border: "1px solid #374151",
+                backgroundColor: "var(--tooltip-bg, #ffffff)",
+                border: "1px solid var(--tooltip-border, #e5e7eb)",
                 borderRadius: 8,
-                color: "#F9FAFB",
+                color: "var(--tooltip-text, #111827)",
                 fontSize: 12,
               }}
+              itemStyle={{ color: "var(--tooltip-text, #111827)" }}
+              labelStyle={{ color: "var(--tooltip-text, #111827)" }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="entered" stroke="#3B82F6" name="Entered" strokeWidth={2} dot={false} />

@@ -4,26 +4,79 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 220 14% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 47% 11%;
     --primary: 217 100% 50%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
     --ring: 217 100% 50%;
     --radius: 0.75rem;
+
+    /* Semantic surface tokens */
+    --surface-1: 0 0% 100%;          /* base card surface */
+    --surface-2: 220 14% 98%;        /* page background */
+    --surface-3: 220 14% 96%;        /* subtle hover / inset */
+    --border-subtle: 220 13% 93%;
+    --border-strong: 220 13% 85%;
+
+    /* Chart tokens (recharts) */
+    --tooltip-bg: #ffffff;
+    --tooltip-border: #e5e7eb;
+    --tooltip-text: #111827;
+    --grid-color: #f0f0f0;
+    --axis-color: #6b7280;
+  }
+
+  /* Professional dark theme — Linear / Vercel inspired.
+     Cool neutral with deep blacks, layered surfaces, refined borders. */
+  .dark {
+    --background: 222 16% 6%;        /* deep page bg */
+    --foreground: 210 20% 96%;
+    --card: 222 14% 9%;              /* card surface (slightly lighter than bg) */
+    --card-foreground: 210 20% 96%;
+    --popover: 222 14% 10%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 217 100% 60%;         /* slightly brighter blue for dark bg */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 13% 14%;
+    --secondary-foreground: 210 20% 96%;
+    --muted: 222 13% 12%;
+    --muted-foreground: 220 9% 64%;
+    --accent: 222 13% 14%;
+    --accent-foreground: 210 20% 96%;
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 13% 16%;
+    --input: 222 13% 16%;
+    --ring: 217 100% 60%;
+
+    --surface-1: 222 14% 9%;
+    --surface-2: 222 16% 6%;
+    --surface-3: 222 13% 13%;
+    --border-subtle: 222 13% 14%;
+    --border-strong: 222 13% 22%;
+
+    /* Chart tokens (recharts) — tuned for dark surface */
+    --tooltip-bg: #14171c;
+    --tooltip-border: #2a2e36;
+    --tooltip-text: #f7f8fa;
+    --grid-color: #1f2329;
+    --axis-color: #8a929e;
+
+    color-scheme: dark;
   }
 
   * {
@@ -33,6 +86,138 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Dark theme refinements
+ *
+ * The codebase uses Tailwind utilities like `bg-white`, `border-gray-100`,
+ * `text-gray-900` directly without `dark:` variants in many places. To keep
+ * the dark theme cohesive without a massive refactor, we override these
+ * common utilities when the `.dark` class is present.
+ *
+ * `:where()` keeps specificity at (0,1,0) so any explicit `dark:bg-XYZ` on
+ * a component (specificity 0,2,0) still wins. This makes the override act
+ * as a sensible *default* rather than a hard force.
+ * ------------------------------------------------------------------------ */
+@layer utilities {
+  /* Surfaces */
+  .dark :where(.bg-white) {
+    background-color: hsl(var(--card));
+  }
+  .dark :where(.bg-gray-50) {
+    background-color: hsl(var(--background));
+  }
+  .dark :where(.bg-gray-100) {
+    background-color: hsl(var(--surface-3));
+  }
+  .dark :where(.bg-gray-200) {
+    background-color: hsl(222 13% 18%);
+  }
+
+  /* Translucent / overlay surfaces */
+  .dark :where(.bg-white\/50, .bg-white\/60, .bg-white\/70, .bg-white\/80, .bg-white\/90) {
+    background-color: hsl(var(--card) / 0.85);
+  }
+  .dark :where(.bg-gray-50\/50, .bg-gray-50\/30) {
+    background-color: hsl(var(--surface-3) / 0.5);
+  }
+
+  /* Borders — inherit a refined dark border color */
+  .dark :where(.border-gray-100, .border-gray-200) {
+    border-color: hsl(var(--border));
+  }
+  .dark :where(.divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+              .divide-gray-200 > :not([hidden]) ~ :not([hidden])) {
+    border-color: hsl(var(--border));
+  }
+
+  /* Text — primary, secondary, muted */
+  .dark :where(.text-gray-900) {
+    color: hsl(var(--foreground));
+  }
+  .dark :where(.text-gray-800, .text-gray-700) {
+    color: hsl(210 20% 88%);
+  }
+  .dark :where(.text-gray-600) {
+    color: hsl(220 9% 70%);
+  }
+  .dark :where(.text-gray-500) {
+    color: hsl(var(--muted-foreground));
+  }
+  .dark :where(.text-gray-400) {
+    color: hsl(220 9% 56%);
+  }
+
+  /* Soft tinted backgrounds for badges/cards (light mode uses 50/100 shades).
+     In dark mode these need lower-saturation, low-opacity overlays so they
+     don't glare against the deep background. */
+  .dark :where(.bg-blue-50) {
+    background-color: hsl(217 100% 60% / 0.12);
+  }
+  .dark :where(.bg-green-50) {
+    background-color: hsl(152 60% 45% / 0.14);
+  }
+  .dark :where(.bg-red-50) {
+    background-color: hsl(0 72% 56% / 0.14);
+  }
+  .dark :where(.bg-amber-50, .bg-yellow-50) {
+    background-color: hsl(38 92% 50% / 0.14);
+  }
+  .dark :where(.bg-purple-50) {
+    background-color: hsl(262 83% 60% / 0.14);
+  }
+  .dark :where(.bg-orange-50) {
+    background-color: hsl(24 95% 55% / 0.14);
+  }
+  .dark :where(.bg-indigo-50) {
+    background-color: hsl(231 80% 60% / 0.14);
+  }
+  .dark :where(.bg-pink-50) {
+    background-color: hsl(330 80% 60% / 0.14);
+  }
+  .dark :where(.bg-emerald-50) {
+    background-color: hsl(160 70% 45% / 0.14);
+  }
+
+  /* Tinted text colors that are too dark for dark mode */
+  .dark :where(.text-blue-600, .text-blue-700, .text-blue-800, .text-blue-900) {
+    color: hsl(217 100% 70%);
+  }
+  .dark :where(.text-green-600, .text-green-700, .text-green-800) {
+    color: hsl(152 65% 60%);
+  }
+  .dark :where(.text-red-600, .text-red-700, .text-red-800) {
+    color: hsl(0 80% 70%);
+  }
+  .dark :where(.text-amber-600, .text-amber-700, .text-yellow-600, .text-yellow-700) {
+    color: hsl(38 92% 65%);
+  }
+  .dark :where(.text-purple-600, .text-purple-700, .text-purple-800) {
+    color: hsl(262 83% 75%);
+  }
+  .dark :where(.text-orange-600, .text-orange-700) {
+    color: hsl(24 95% 68%);
+  }
+  .dark :where(.text-indigo-600, .text-indigo-700) {
+    color: hsl(231 80% 72%);
+  }
+
+  /* Borders for light tinted variants */
+  .dark :where(.border-blue-100, .border-blue-200) {
+    border-color: hsl(217 100% 60% / 0.3);
+  }
+  .dark :where(.border-green-100, .border-green-200) {
+    border-color: hsl(152 60% 45% / 0.3);
+  }
+  .dark :where(.border-red-100, .border-red-200) {
+    border-color: hsl(0 72% 56% / 0.3);
+  }
+  .dark :where(.border-amber-100, .border-amber-200, .border-yellow-100, .border-yellow-200) {
+    border-color: hsl(38 92% 50% / 0.3);
   }
 }
 
@@ -42,7 +227,7 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-  
+
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
@@ -50,6 +235,37 @@
   .text-balance {
     text-wrap: balance;
   }
+}
+
+/* Refined scrollbar styling for both modes */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: hsl(220 13% 85%);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(220 13% 75%);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: hsl(222 13% 20%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(222 13% 28%);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 
 /* Animation utilities */
@@ -80,12 +296,22 @@
 .glass {
   @apply bg-white/80 backdrop-blur-xl border border-white/20;
 }
+.dark .glass {
+  background-color: hsl(var(--card) / 0.7);
+  border-color: hsl(var(--border));
+  backdrop-filter: blur(20px);
+}
 
 /* Volina background pattern */
 .volina-pattern {
-  background-image: 
+  background-image:
     radial-gradient(circle at 25% 25%, rgba(0, 85, 255, 0.03) 0%, transparent 50%),
     radial-gradient(circle at 75% 75%, rgba(0, 85, 255, 0.03) 0%, transparent 50%);
+}
+.dark .volina-pattern {
+  background-image:
+    radial-gradient(circle at 25% 25%, rgba(51, 133, 255, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(51, 133, 255, 0.06) 0%, transparent 50%);
 }
 
 /* Pulse animation for voice indicator */
@@ -129,6 +355,9 @@
 .card-hover {
   @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5;
 }
+.dark .card-hover:hover {
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+}
 
 /* Focus ring for accessibility */
 .focus-ring {
@@ -139,15 +368,28 @@
 ::selection {
   @apply bg-primary/20 text-primary-900;
 }
+.dark ::selection {
+  background-color: hsl(217 100% 60% / 0.35);
+  color: hsl(210 20% 98%);
+}
 
 /* Audio player styling */
 audio::-webkit-media-controls-panel {
   @apply bg-gray-50;
 }
+.dark audio::-webkit-media-controls-panel {
+  background-color: hsl(var(--surface-3));
+}
+.dark audio {
+  filter: invert(0.88) hue-rotate(180deg);
+}
 
 /* Table styling */
 .table-zebra tbody tr:nth-child(even) {
   @apply bg-gray-50/50;
+}
+.dark .table-zebra tbody tr:nth-child(even) {
+  background-color: hsl(var(--surface-3) / 0.4);
 }
 
 /* Calendar slot styling */
@@ -158,6 +400,9 @@ audio::-webkit-media-controls-panel {
 .calendar-slot-scheduled {
   @apply border-l-primary bg-primary/5;
 }
+.dark .calendar-slot-scheduled {
+  background-color: hsl(var(--primary) / 0.12);
+}
 
 .calendar-slot-confirmed {
   @apply border-l-green-500 bg-green-50;
@@ -167,3 +412,18 @@ audio::-webkit-media-controls-panel {
   @apply ring-2 ring-primary/20;
 }
 
+/* Subtle elevated card shadow tuned for dark mode */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+}
+.dark .shadow,
+.dark .shadow-md {
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+}
+.dark .shadow-lg {
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.55);
+}
+.dark .shadow-xl,
+.dark .shadow-2xl {
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.7);
+}

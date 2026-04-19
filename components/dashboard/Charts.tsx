@@ -57,10 +57,13 @@ export function Charts({ callTypeData, dailyActivityData }: ChartsProps) {
                 contentStyle={{
                   backgroundColor: "var(--tooltip-bg, white)",
                   border: "1px solid var(--tooltip-border, #e5e7eb)",
+                  color: "var(--tooltip-text, #111827)",
                   borderRadius: "8px",
                   boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   fontSize: "12px",
                 }}
+                itemStyle={{ color: "var(--tooltip-text, #111827)" }}
+                labelStyle={{ color: "var(--tooltip-text, #111827)" }}
                 formatter={(value: number) => [`${value} calls`, "Count"]}
               />
               <Legend
@@ -98,11 +101,14 @@ export function Charts({ callTypeData, dailyActivityData }: ChartsProps) {
                 contentStyle={{
                   backgroundColor: "var(--tooltip-bg, white)",
                   border: "1px solid var(--tooltip-border, #e5e7eb)",
+                  color: "var(--tooltip-text, #111827)",
                   borderRadius: "8px",
                   boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
                   fontSize: "12px",
                 }}
-                cursor={{ fill: "rgba(0, 85, 255, 0.05)" }}
+                itemStyle={{ color: "var(--tooltip-text, #111827)" }}
+                labelStyle={{ color: "var(--tooltip-text, #111827)" }}
+                cursor={{ fill: "rgba(0, 85, 255, 0.08)" }}
               />
               <Legend
                 verticalAlign="top"
