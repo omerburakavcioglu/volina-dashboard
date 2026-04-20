@@ -2685,6 +2685,15 @@ function CallsPageContent() {
     if (!user?.id) return;
     setIsRefreshing(true);
     try {
+      // Pull latest calls from VAPI into DB first, in case the webhook
+      // missed any. Failures here are non-fatal — still reload from DB.
+      try {
+        await fetch(`/api/vapi/sync?userId=${user.id}&days=14`, {
+          method: "POST",
+        });
+      } catch (syncError) {
+        console.warn("VAPI sync failed, continuing with DB reload:", syncError);
+      }
       await loadCalls(true);
     } catch (error) {
       console.error("Error during refresh:", error);

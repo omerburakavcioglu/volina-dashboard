@@ -8,14 +8,6 @@ export interface DashboardVisibleCall {
   [key: string]: unknown;
 }
 
-const WRONG_ASSISTANT_PATTERNS = [
-  "gop dentel",
-  "özel gop dentel",
-  "gop dentel diş polikliniği",
-  "eda ben",
-  "turkcell sekreter servisi",
-];
-
 export async function getUserAssistantId(
   supabase: SupabaseClient,
   userId: string
@@ -31,52 +23,20 @@ export async function getUserAssistantId(
 
 export function filterVisibleDashboardCalls<T extends DashboardVisibleCall>(
   calls: T[],
-  userAssistantId: string | null
+  _userAssistantId: string | null
 ): T[] {
-  let filtered = calls;
   const initialCount = calls.length;
-  let assistantFiltered = 0;
-  let webCallFiltered = 0;
-  let patternFiltered = 0;
 
-  // Include calls that match assistant OR legacy calls without assistant
-  if (userAssistantId && filtered.length > 0) {
-    const beforeAssistantFilter = filtered.length;
-    filtered = filtered.filter((call) => {
-      const callAssistantId = (call as Record<string, unknown>).assistant_id as
-        | string
-        | undefined;
-      const metadataAssistantId = call.metadata?.assistantId as string | undefined;
-      const hasAssistantId = callAssistantId || metadataAssistantId;
-      if (!hasAssistantId) return true; // Legacy calls without assistant_id are included
-      return callAssistantId === userAssistantId || metadataAssistantId === userAssistantId;
-    });
-    assistantFiltered = beforeAssistantFilter - filtered.length;
-  }
-
-  // Exclude webCall (Vapi dashboard test calls)
-  const beforeWebCallFilter = filtered.length;
-  filtered = filtered.filter((call) => {
+  // Only exclude Vapi dashboard test calls (webCall). Tenant isolation is
+  // already enforced at the DB level via user_id; additional assistant_id
+  // and transcript-pattern filtering was hiding legitimate calls.
+  const filtered = calls.filter((call) => {
     const callType = call.metadata?.callType as string | undefined;
     return callType !== "webCall";
   });
-  webCallFiltered = beforeWebCallFilter - filtered.length;
 
-  // Exclude wrong-assistant conversations by transcript/summary text
-  const beforePatternFilter = filtered.length;
-  filtered = filtered.filter((call) => {
-    const transcript = String(call.transcript || "").toLowerCase();
-    const summary = String(call.summary || "").toLowerCase();
-    const textToCheck = `${transcript} ${summary}`;
-    return !WRONG_ASSISTANT_PATTERNS.some((pattern) =>
-      textToCheck.includes(pattern.toLowerCase())
-    );
-  });
-  patternFiltered = beforePatternFilter - filtered.length;
-
-  // Log filtering details for debugging
   if (initialCount !== filtered.length) {
-    console.log(`[Filter Calls] Initial: ${initialCount}, Final: ${filtered.length}, Removed: ${initialCount - filtered.length} (Assistant: ${assistantFiltered}, WebCall: ${webCallFiltered}, Pattern: ${patternFiltered})`);
+    console.log(`[Filter Calls] Initial: ${initialCount}, Final: ${filtered.length}, Removed (webCall): ${initialCount - filtered.length}`);
   }
 
   return filtered;
