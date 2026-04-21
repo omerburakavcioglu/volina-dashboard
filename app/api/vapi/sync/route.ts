@@ -4,6 +4,10 @@ import { getVapiCalls, transformVapiCallToLocal, isVapiConfigured } from "@/lib/
 import { cleanCallSummary } from "@/lib/utils";
 import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
 
+// Allow up to 5 minutes on Vercel. Sync can be slow when many new calls
+// exist (OpenAI evaluation per call). Default 60s was causing 504s.
+export const maxDuration = 300;
+
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 // Helper function to create default evaluation when transcript/summary is not available
@@ -369,12 +373,24 @@ export async function POST(request: NextRequest) {
       if (textToEvaluate) {
         try {
           console.log(`[VAPI Sync] Evaluating call ${vapiCall.id} with our system...`);
-          const structuredEvaluation = await evaluateCallWithStructuredOutput(
-            textToEvaluate,
-            cleanedSummary,
-            vapiCall.endedReason
-          );
-          
+          // Per-call 8s cap so a single slow OpenAI response can't cause the
+          // whole sync to hit Vercel's function timeout. Falls back to the
+          // endedReason-based default eval — the call still gets inserted.
+          const evalTimeoutMs = 8000;
+          const structuredEvaluation = await Promise.race([
+            evaluateCallWithStructuredOutput(
+              textToEvaluate,
+              cleanedSummary,
+              vapiCall.endedReason
+            ),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error(`Evaluation timeout after ${evalTimeoutMs}ms`)),
+                evalTimeoutMs
+              )
+            ),
+          ]);
+
           parsedEvaluation = {
             score: structuredEvaluation.successEvaluation.score,
             sentiment: structuredEvaluation.successEvaluation.sentiment,
@@ -386,8 +402,10 @@ export async function POST(request: NextRequest) {
           };
           callSummaryFromStructured = structuredEvaluation.callSummary.callSummary;
         } catch (error) {
-          console.error(`[VAPI Sync] Error evaluating call ${vapiCall.id}:`, error);
-          // Fallback to default evaluation
+          console.error(`[VAPI Sync] Error/timeout evaluating call ${vapiCall.id}:`, error);
+          // Fallback to default evaluation — insert proceeds so the call
+          // still shows up in the dashboard. Re-eval can run later via
+          // /api/calls/evaluate.
           parsedEvaluation = createDefaultEvaluation(vapiCall.endedReason);
           callSummaryFromStructured = null;
         }
