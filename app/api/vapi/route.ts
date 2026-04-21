@@ -485,20 +485,94 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     }
   }
 
+  // 6. Fallback: find user by vapi_phone_number_id (covers inbound calls
+  //    where assistant_id / org_id were missing or stale).
+  if (!userId && call.phoneNumberId) {
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("vapi_phone_number_id", call.phoneNumberId)
+        .maybeSingle() as { data: { id: string } | null };
+      if (profile) {
+        userId = profile.id;
+        console.log("Using user_id from vapi_phone_number_id match:", userId);
+      }
+    } catch (phoneLookupError) {
+      console.warn("phoneNumberId lookup failed:", phoneLookupError);
+    }
+  }
+
   if (!userId) {
-    console.error("=== USER ID NOT FOUND ===");
-    console.error("Call ID:", call.id);
-    console.error("Metadata:", call.metadata);
-    console.error("Outreach ID:", outreachId);
-    console.error("Lead ID:", leadId);
-    console.error("VAPI Org ID:", vapiOrgId);
-    console.error("Direct Call User ID:", directCallUserId);
-    console.error("=========================");
-    // Don't return error - just log it, so webhook doesn't fail
-    // VAPI will retry if we return error
+    console.error("[VAPI Webhook] UNATTRIBUTED call — could not resolve user_id", {
+      vapiCallId: call.id,
+      orgId: vapiOrgId,
+      assistantId: callAssistantId,
+      phoneNumberId: call.phoneNumberId,
+      customerNumber: call.customer?.number,
+      metadata: call.metadata,
+      outreachId,
+      leadId,
+      directCallUserId,
+    });
+
+    // Best-effort: persist the call with user_id=null so it does not vanish.
+    // If the schema enforces NOT NULL, this insert will fail and we simply
+    // leave the loud log above as the only record. We still return 200 so
+    // VAPI does not keep retrying.
+    try {
+      const { error: unattributedError } = await supabase
+        .from("calls")
+        .insert({
+          user_id: null,
+          vapi_call_id: call.id,
+          recording_url: recordingUrl || null,
+          transcript: transcript || null,
+          summary: summary || null,
+          duration:
+            call.startedAt && call.endedAt
+              ? Math.round(
+                  (new Date(call.endedAt).getTime() -
+                    new Date(call.startedAt).getTime()) /
+                    1000
+                )
+              : null,
+          type: call.type || "outbound",
+          caller_phone: call.customer?.number || null,
+          caller_name: call.customer?.name || null,
+          assistant_id: callAssistantId || null,
+          created_at: call.startedAt || call.createdAt || new Date().toISOString(),
+          metadata: {
+            orgId: call.orgId,
+            status: call.status,
+            endedReason: call.endedReason,
+            unattributed: true,
+            assistantId: callAssistantId,
+            phoneNumberId: call.phoneNumberId,
+            reason: "user_id_not_resolved",
+          },
+        } as never);
+      if (unattributedError) {
+        console.error(
+          "[VAPI Webhook] Failed to persist unattributed call (likely NOT NULL user_id):",
+          unattributedError
+        );
+      } else {
+        console.warn(
+          "[VAPI Webhook] Persisted unattributed call with user_id=null:",
+          call.id
+        );
+      }
+    } catch (persistError) {
+      console.error(
+        "[VAPI Webhook] Exception persisting unattributed call:",
+        persistError
+      );
+    }
+
     return NextResponse.json(
       { success: false, error: "User not found for this call", call_id: call.id },
-      { status: 200 } // Return 200 so VAPI doesn't retry
+      { status: 200 }
     );
   }
 

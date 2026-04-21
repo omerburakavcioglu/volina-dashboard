@@ -2635,6 +2635,73 @@ function CallsPageContent() {
     }
   }, [user?.id, authLoading, loadCalls, isMockMode, loadMockData]);
 
+  // Background refresh: trigger a VAPI sync on mount (once) and then poll
+  // the DB every 30s while the tab is visible so recent calls appear
+  // without requiring the Refresh button. Sync is also re-run every 2 min
+  // so webhook-missed calls eventually surface.
+  useEffect(() => {
+    if (isMockMode || authLoading || !user?.id) return;
+
+    const userId = user.id;
+    let cancelled = false;
+    let dbPollInterval: ReturnType<typeof setInterval> | null = null;
+    let syncInterval: ReturnType<typeof setInterval> | null = null;
+
+    const runSync = () => {
+      fetch(`/api/vapi/sync?userId=${userId}&days=2`, { method: "POST" })
+        .then(() => {
+          if (!cancelled) loadCalls(true);
+        })
+        .catch((err) => {
+          console.warn("[calls] background sync failed:", err);
+        });
+    };
+
+    const start = () => {
+      if (dbPollInterval || syncInterval) return;
+      dbPollInterval = setInterval(() => {
+        if (document.visibilityState === "visible" && !cancelled) {
+          loadCalls(true);
+        }
+      }, 30_000);
+      syncInterval = setInterval(() => {
+        if (document.visibilityState === "visible" && !cancelled) {
+          runSync();
+        }
+      }, 120_000);
+    };
+
+    const stop = () => {
+      if (dbPollInterval) {
+        clearInterval(dbPollInterval);
+        dbPollInterval = null;
+      }
+      if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        runSync();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    runSync();
+    start();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [user?.id, authLoading, isMockMode, loadCalls]);
+
   // Filter and sort calls
   useEffect(() => {
     let filtered = [...calls];
@@ -2839,7 +2906,7 @@ function CallsPageContent() {
 
         {/* Sort Dropdown */}
         <div className="w-full sm:w-auto">
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+          <Select value={sortBy} onValueChange={(v: string) => setSortBy(v as SortOption)}>
             <SelectTrigger className="w-full sm:w-52 border-gray-200 dark:border-gray-700 dark:bg-gray-800">
               <ArrowUpDown className="w-4 h-4 mr-2 text-gray-400" />
               <SelectValue placeholder={t("sortBy")} />

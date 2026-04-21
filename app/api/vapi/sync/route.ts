@@ -175,62 +175,81 @@ export async function POST(request: NextRequest) {
     // Fetch calls from VAPI using tenant-specific key if available
     // VAPI allows max 1000 per request, so we need to make multiple requests if there are more calls
     let vapiCalls: any[] = [];
+    // Track which fetched calls came from the assistant-less fallback so we
+    // can tag them in metadata (useful for diagnosing wrong vapi_assistant_id
+    // in the user profile).
+    const fallbackCallIds = new Set<string>();
     try {
       // Strategy: Fetch in batches by splitting date range into 1-day chunks
       // This is faster than recursive splitting and ensures we get all calls
-      let allCalls: any[] = [];
-      const endDate = new Date();
-      let currentStart = new Date(startDate);
-      const callIds = new Set<string>(); // Track unique call IDs to avoid duplicates
-      
-      // Fetch in 1-day chunks to avoid missing calls when there are more than 1000 in a period
-      let failedDays = 0;
-      while (currentStart < endDate) {
-        const chunkEnd = new Date(currentStart);
-        chunkEnd.setDate(chunkEnd.getDate() + 1); // 1 day chunk
-        if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
-        
-        try {
-          const batch = await getVapiCalls({
-            limit: 1000,
-            createdAtGe: currentStart.toISOString(),
-            createdAtLe: chunkEnd.toISOString(),
-            assistantId: userProfile?.vapi_assistant_id || undefined,
-          }, tenantApiKey);
-          
-          // Add only new calls (deduplicate)
-          for (const call of batch) {
-            if (!callIds.has(call.id)) {
-              callIds.add(call.id);
-              allCalls.push(call);
+      const runChunkedFetch = async (useAssistantFilter: boolean) => {
+        const fetched: any[] = [];
+        const seen = new Set<string>();
+        const end = new Date();
+        let cursor = new Date(startDate);
+        let failed = 0;
+        while (cursor < end) {
+          const chunkEnd = new Date(cursor);
+          chunkEnd.setDate(chunkEnd.getDate() + 1);
+          if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+
+          try {
+            const batch = await getVapiCalls({
+              limit: 1000,
+              createdAtGe: cursor.toISOString(),
+              createdAtLe: chunkEnd.toISOString(),
+              assistantId: useAssistantFilter
+                ? userProfile?.vapi_assistant_id || undefined
+                : undefined,
+            }, tenantApiKey);
+
+            for (const call of batch) {
+              if (!seen.has(call.id)) {
+                seen.add(call.id);
+                fetched.push(call);
+              }
+            }
+
+            console.log(`[VAPI Sync] Fetched ${batch.length} calls from ${cursor.toISOString().split('T')[0]} (assistantFilter=${useAssistantFilter}, total: ${fetched.length})`);
+          } catch (dayError) {
+            failed++;
+            console.error(`[VAPI Sync] Failed to fetch calls for ${cursor.toISOString().split('T')[0]} (assistantFilter=${useAssistantFilter}): ${dayError instanceof Error ? dayError.message : String(dayError)}`);
+            if (failed >= days) {
+              throw dayError;
             }
           }
-          
-          console.log(`[VAPI Sync] Fetched ${batch.length} calls from ${currentStart.toISOString().split('T')[0]} (total: ${allCalls.length})`);
-        } catch (dayError) {
-          failedDays++;
-          console.error(`[VAPI Sync] Failed to fetch calls for ${currentStart.toISOString().split('T')[0]}: ${dayError instanceof Error ? dayError.message : String(dayError)}`);
-          // Continue to next day instead of failing entire sync
-          if (failedDays >= days) {
-            // If ALL days failed, throw to trigger overall error
-            throw dayError;
-          }
+
+          cursor = new Date(chunkEnd);
+          cursor.setMilliseconds(cursor.getMilliseconds() + 1);
+
+          // Small delay between requests to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
         }
-        
-        // Move to next day
-        currentStart = new Date(chunkEnd);
-        currentStart.setMilliseconds(currentStart.getMilliseconds() + 1);
-        
-        // Small delay between requests to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200));
+
+        if (failed > 0) {
+          console.log(`[VAPI Sync] Warning: ${failed} day(s) failed to fetch (assistantFilter=${useAssistantFilter}), continuing with ${fetched.length} calls`);
+        }
+        return fetched;
+      };
+
+      const hasAssistantFilter = Boolean(userProfile?.vapi_assistant_id);
+      const primary = await runChunkedFetch(hasAssistantFilter);
+      vapiCalls = primary;
+
+      // Fallback: if the assistant filter was applied and produced zero
+      // calls, retry without the filter. This covers the common case where
+      // profiles.vapi_assistant_id is stale/wrong but the tenant's API key
+      // is correct. Tag these calls in metadata so we can tell them apart.
+      if (hasAssistantFilter && primary.length === 0) {
+        console.log(`[VAPI Sync] assistantId filter returned 0, retrying without filter`);
+        const fallback = await runChunkedFetch(false);
+        for (const call of fallback) {
+          fallbackCallIds.add(call.id);
+        }
+        vapiCalls = fallback;
       }
-      
-      if (failedDays > 0) {
-        console.log(`[VAPI Sync] Warning: ${failedDays} day(s) failed to fetch, continuing with ${allCalls.length} calls`);
-      }
-      
-      vapiCalls = allCalls;
-      console.log(`[VAPI Sync] Total unique calls fetched: ${vapiCalls.length}`);
+
+      console.log(`[VAPI Sync] Total unique calls fetched: ${vapiCalls.length} (fallback=${fallbackCallIds.size})`);
     } catch (vapiError) {
       console.error("[VAPI Sync] Error fetching calls from VAPI:", vapiError);
       const errorMessage = vapiError instanceof Error ? vapiError.message : String(vapiError);
@@ -487,6 +506,7 @@ export async function POST(request: NextRequest) {
           structuredData: ourStructuredData,
           tags: parsedEvaluation.tags,
           assistantId: assistantId, // Also store in metadata for filtering
+          assistantFilterFallback: fallbackCallIds.has(vapiCall.id) || undefined,
         },
       };
 
