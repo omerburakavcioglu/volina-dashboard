@@ -273,15 +273,41 @@ export async function POST(request: NextRequest) {
     let synced = 0;
     let skipped = 0;
 
-    for (const vapiCall of vapiCalls) {
-      // Check if call already exists in Supabase
-      const { data: existing } = await supabase
-        .from("calls")
-        .select("id")
-        .eq("vapi_call_id", vapiCall.id)
-        .single();
+    // Preload existing vapi_call_ids for this user into a Set so we can skip
+    // a per-call existence check. Previously this did up to N round trips to
+    // Supabase per sync (where N = number of VAPI calls fetched), which was
+    // the main cause of 504 timeouts once the user accumulated thousands of
+    // historical calls.
+    const existingIds = new Set<string>();
+    {
+      const batchSize = 1000;
+      let from = 0;
+      while (true) {
+        const { data: existingRows, error: existingError } = await supabase
+          .from("calls")
+          .select("vapi_call_id")
+          .eq("user_id", userId)
+          .not("vapi_call_id", "is", null)
+          .range(from, from + batchSize - 1) as {
+          data: { vapi_call_id: string | null }[] | null;
+          error: unknown;
+        };
+        if (existingError) {
+          console.warn("[VAPI Sync] Could not preload existing ids:", existingError);
+          break;
+        }
+        if (!existingRows || existingRows.length === 0) break;
+        for (const row of existingRows) {
+          if (row.vapi_call_id) existingIds.add(row.vapi_call_id);
+        }
+        if (existingRows.length < batchSize) break;
+        from += batchSize;
+      }
+      console.log(`[VAPI Sync] Preloaded ${existingIds.size} existing vapi_call_ids`);
+    }
 
-      if (existing) {
+    for (const vapiCall of vapiCalls) {
+      if (existingIds.has(vapiCall.id)) {
         skipped++;
         continue;
       }

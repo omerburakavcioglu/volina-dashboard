@@ -2686,9 +2686,10 @@ function CallsPageContent() {
     setIsRefreshing(true);
     try {
       // Pull latest calls from VAPI into DB first, in case the webhook
-      // missed any. Failures here are non-fatal — still reload from DB.
+      // missed any. Only last 2 days — recent gaps are what matter; older
+      // calls should already be synced. Failures here are non-fatal.
       try {
-        await fetch(`/api/vapi/sync?userId=${user.id}&days=14`, {
+        await fetch(`/api/vapi/sync?userId=${user.id}&days=2`, {
           method: "POST",
         });
       } catch (syncError) {
