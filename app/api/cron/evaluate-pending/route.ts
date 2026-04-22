@@ -18,11 +18,16 @@ import {
 
 export const maxDuration = 300;
 
-// Don't spend the whole 5 minutes on a single cron tick — leave headroom
-// so a slow batch cannot overlap the next tick.
-const PROCESS_BUDGET_MS = 55_000;
-const BATCH_SIZE = 25;
-const PER_CALL_TIMEOUT_MS = 45_000;
+// Use most of maxDuration (5 min). Overlapping ticks are fine because
+// every row goes through an optimistic lock (pending -> processing) so
+// two concurrent cron invocations cannot double-process the same row.
+// Larger budget + bigger batch => more throughput when OpenAI rate
+// limits force retries.
+const PROCESS_BUDGET_MS = 240_000;
+const BATCH_SIZE = 60;
+// Fail fast on a single stuck OpenAI call so we don't burn the budget
+// on one row. The evaluator already retries internally on 429s.
+const PER_CALL_TIMEOUT_MS = 30_000;
 
 interface PendingCall {
   id: string;
