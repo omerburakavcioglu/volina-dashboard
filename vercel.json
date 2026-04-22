@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/campaigns",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/vapi-sync",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/evaluate-pending",
+      "schedule": "* * * * *"
     }
   ]
 }

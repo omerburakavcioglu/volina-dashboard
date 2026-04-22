@@ -2024,6 +2024,14 @@ function CallsPageContent() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [sortBy, setSortBy] = useState<SortOption>("latest");
+  // Evaluation queue indicator — populated by polling
+  // /api/calls/evaluation-status. We show a small floating pill while
+  // the eval cron is working through pending/processing rows so the user
+  // knows why some rows look "default" for a minute or two.
+  const [evalQueue, setEvalQueue] = useState<{
+    pending: number;
+    processing: number;
+  }>({ pending: 0, processing: 0 });
 
   // Update a specific call in the calls list
   const handleCallUpdated = useCallback((callId: string, updatedCall: Call) => {
@@ -2531,7 +2539,13 @@ function CallsPageContent() {
       return;
     }
 
-    setIsLoading(true);
+    // Only flip into the full-page loading state on the initial fetch.
+    // forceRefresh=true means this is a background poll / manual Refresh
+    // button click — those should update data in place without unmounting
+    // the whole page into a spinner.
+    if (!forceRefresh) {
+      setIsLoading(true);
+    }
     try {
       // Add timestamp to bypass cache if forceRefresh is true
       const cacheBuster = forceRefresh ? `&_t=${Date.now()}` : '';
@@ -2635,40 +2649,22 @@ function CallsPageContent() {
     }
   }, [user?.id, authLoading, loadCalls, isMockMode, loadMockData]);
 
-  // Background refresh: trigger a VAPI sync on mount (once) and then poll
-  // the DB every 30s while the tab is visible so recent calls appear
-  // without requiring the Refresh button. Sync is also re-run every 2 min
-  // so webhook-missed calls eventually surface.
+  // Background refresh: just poll the DB every 15s while the tab is visible.
+  // VAPI ingestion is owned by the /api/cron/vapi-sync cron and evaluation by
+  // /api/cron/evaluate-pending, so the client never triggers sync itself.
   useEffect(() => {
     if (isMockMode || authLoading || !user?.id) return;
 
-    const userId = user.id;
     let cancelled = false;
     let dbPollInterval: ReturnType<typeof setInterval> | null = null;
-    let syncInterval: ReturnType<typeof setInterval> | null = null;
-
-    const runSync = () => {
-      fetch(`/api/vapi/sync?userId=${userId}&days=2`, { method: "POST" })
-        .then(() => {
-          if (!cancelled) loadCalls(true);
-        })
-        .catch((err) => {
-          console.warn("[calls] background sync failed:", err);
-        });
-    };
 
     const start = () => {
-      if (dbPollInterval || syncInterval) return;
+      if (dbPollInterval) return;
       dbPollInterval = setInterval(() => {
         if (document.visibilityState === "visible" && !cancelled) {
           loadCalls(true);
         }
-      }, 30_000);
-      syncInterval = setInterval(() => {
-        if (document.visibilityState === "visible" && !cancelled) {
-          runSync();
-        }
-      }, 120_000);
+      }, 15_000);
     };
 
     const stop = () => {
@@ -2676,22 +2672,17 @@ function CallsPageContent() {
         clearInterval(dbPollInterval);
         dbPollInterval = null;
       }
-      if (syncInterval) {
-        clearInterval(syncInterval);
-        syncInterval = null;
-      }
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        runSync();
+        loadCalls(true);
         start();
       } else {
         stop();
       }
     };
 
-    runSync();
     start();
     document.addEventListener("visibilitychange", onVisibilityChange);
 
@@ -2701,6 +2692,73 @@ function CallsPageContent() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [user?.id, authLoading, isMockMode, loadCalls]);
+
+  // Poll the evaluation queue counters every 10s while the tab is visible.
+  // This is cheap (HEAD + count(*)) and lets us show a floating pill when
+  // the background cron is still working on recent calls.
+  useEffect(() => {
+    if (isMockMode || authLoading || !user?.id) return;
+
+    const userId = user.id;
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(
+          `/api/calls/evaluation-status?userId=${encodeURIComponent(userId)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          pending?: number;
+          processing?: number;
+        };
+        if (cancelled) return;
+        setEvalQueue({
+          pending: data.pending ?? 0,
+          processing: data.processing ?? 0,
+        });
+      } catch {
+        // Silent — pill just stays in its previous state.
+      }
+    };
+
+    const start = () => {
+      if (interval) return;
+      interval = setInterval(() => {
+        if (document.visibilityState === "visible" && !cancelled) {
+          fetchStatus();
+        }
+      }, 10_000);
+    };
+
+    const stop = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchStatus();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    fetchStatus();
+    start();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [user?.id, authLoading, isMockMode]);
 
   // Filter and sort calls
   useEffect(() => {
@@ -2752,13 +2810,15 @@ function CallsPageContent() {
     if (!user?.id) return;
     setIsRefreshing(true);
     try {
-      // Pull latest calls from VAPI into DB first, in case the webhook
-      // missed any. Only last 2 days — recent gaps are what matter; older
-      // calls should already be synced. Failures here are non-fatal.
+      // Ingestion-only refresh: pull last 2 days from VAPI without running
+      // OpenAI evaluation inline. The /api/cron/evaluate-pending cron will
+      // evaluate the new rows within a minute. This makes the Refresh
+      // button feel instant and avoids rate-limit flakiness.
       try {
-        await fetch(`/api/vapi/sync?userId=${user.id}&days=2`, {
-          method: "POST",
-        });
+        await fetch(
+          `/api/vapi/sync?userId=${user.id}&days=2&skipEvaluation=true`,
+          { method: "POST" }
+        );
       } catch (syncError) {
         console.warn("VAPI sync failed, continuing with DB reload:", syncError);
       }
@@ -2969,6 +3029,30 @@ function CallsPageContent() {
           setSelectedCall(null);
         }}
       />
+
+      {/* Evaluation queue pill — bottom-right, only while the cron is
+          still working through pending/processing rows for this tenant. */}
+      {evalQueue.pending + evalQueue.processing > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full bg-white/95 dark:bg-gray-900/95 backdrop-blur border border-gray-200 dark:border-gray-700 shadow-lg px-3.5 py-2 text-xs sm:text-sm"
+        >
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+          <span className="text-gray-700 dark:text-gray-200">
+            {evalQueue.processing > 0
+              ? language === "en"
+                ? "Evaluating calls"
+                : "Aramalar değerlendiriliyor"
+              : language === "en"
+                ? "Evaluation queued"
+                : "Değerlendirme sırada"}
+          </span>
+          <span className="inline-flex items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200 text-[11px] font-semibold px-2 py-0.5">
+            {evalQueue.pending + evalQueue.processing}
+          </span>
+        </div>
+      )}
 
       {/* Clear All Confirmation Dialog */}
       <Dialog open={showClearAllDialog} onOpenChange={setShowClearAllDialog}>

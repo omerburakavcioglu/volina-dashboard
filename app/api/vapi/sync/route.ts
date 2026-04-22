@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase";
-import { getVapiCalls, transformVapiCallToLocal, isVapiConfigured } from "@/lib/vapi-api";
+import { getVapiCalls, isVapiConfigured, deriveDashboardCallType } from "@/lib/vapi-api";
 import { cleanCallSummary } from "@/lib/utils";
 import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
 
@@ -10,8 +10,53 @@ export const maxDuration = 300;
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
-// Helper function to create default evaluation when transcript/summary is not available
-function createDefaultEvaluation(endedReason?: string): {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * One OpenAI evaluate at a time (per server process), plus a short pause after
+ * each call so concurrent sync tabs / bursts don't stack on the same TPM bucket.
+ */
+let openAiEvaluateChain: Promise<unknown> = Promise.resolve();
+
+export function enqueueOpenAiEvaluate<T>(work: () => Promise<T>): Promise<T> {
+  const run = openAiEvaluateChain.then(async () => {
+    try {
+      return await work();
+    } finally {
+      await sleep(400);
+    }
+  });
+  openAiEvaluateChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+/** Parses "try again in 1.84s" from OpenAI rate-limit JSON/text. */
+function openAiRetryAfterMs(errorBody: string): number | null {
+  const fromMessage = (msg: string): number | null => {
+    const m = msg.match(/try again in\s+([\d.]+)\s*s/i);
+    if (!m?.[1]) return null;
+    return Math.ceil(parseFloat(m[1]) * 1000) + 250;
+  };
+  try {
+    const j = JSON.parse(errorBody) as {
+      error?: { message?: string; code?: string };
+    };
+    if (j?.error?.code === "rate_limit_exceeded" && j.error.message) {
+      return fromMessage(j.error.message);
+    }
+  } catch {
+    /* not JSON */
+  }
+  return fromMessage(errorBody);
+}
+
+/** Default evaluation used when we have no transcript/summary or OpenAI is unavailable. */
+export function createDefaultEvaluation(endedReason?: string): {
   score: number | null;
   sentiment: "positive" | "neutral" | "negative";
   outcome: string;
@@ -70,7 +115,7 @@ function createDefaultEvaluation(endedReason?: string): {
 }
 
 // Evaluate call with our own evaluation system
-async function evaluateCallWithStructuredOutput(
+export async function evaluateCallWithStructuredOutput(
   transcript: string,
   existingSummary?: string | null,
   endedReason?: string
@@ -99,31 +144,69 @@ async function evaluateCallWithStructuredOutput(
     ? `Arama Transkripti:\n${transcript}\n\nMevcut Özet:\n${existingSummary}${endedReason ? `\n\nEnded Reason: ${endedReason}` : ''}`
     : `Arama Transkripti:\n${transcript}${endedReason ? `\n\nEnded Reason: ${endedReason}` : ''}`;
 
-  const response = await fetch(OPENAI_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage },
-      ],
-      temperature: 0.3,
-      max_tokens: 1000,
-      response_format: { type: "json_object" },
-    }),
-  });
+  const maxAttempts = 12;
+  let lastErrorText = "";
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error: ${error}`);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const response = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return parseOpenAiEvalResponse(data);
+    }
+
+    lastErrorText = await response.text();
+    const retryMs = openAiRetryAfterMs(lastErrorText);
+    if (retryMs !== null && attempt < maxAttempts - 1) {
+      const wait = Math.min(
+        90_000,
+        Math.max(750, Math.ceil(retryMs * 1.2) + 300)
+      );
+      console.warn(
+        `[VAPI Sync] OpenAI rate limited, retrying in ${wait}ms (attempt ${attempt + 1}/${maxAttempts})`
+      );
+      await sleep(wait);
+      continue;
+    }
+    throw new Error(`OpenAI API error: ${lastErrorText}`);
   }
 
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content;
+  throw new Error(`OpenAI API error: ${lastErrorText}`);
+}
+
+function parseOpenAiEvalResponse(data: unknown): {
+  successEvaluation: {
+    score: number;
+    sentiment: "positive" | "neutral" | "negative";
+    outcome: string;
+    tags: string[];
+    objections?: string[];
+    nextAction?: string;
+  };
+  callSummary: {
+    callSummary: string;
+  };
+} {
+  const d = data as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = d.choices?.[0]?.message?.content;
 
   if (!content) {
     throw new Error("No response from OpenAI");
@@ -131,13 +214,28 @@ async function evaluateCallWithStructuredOutput(
 
   try {
     const cleanedContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleanedContent);
-    
+    const parsed = JSON.parse(cleanedContent) as {
+      successEvaluation?: unknown;
+      callSummary?: unknown;
+    };
+
     if (!parsed.successEvaluation || !parsed.callSummary) {
       throw new Error("Invalid structured output format");
     }
-    
-    return parsed;
+
+    return parsed as {
+      successEvaluation: {
+        score: number;
+        sentiment: "positive" | "neutral" | "negative";
+        outcome: string;
+        tags: string[];
+        objections?: string[];
+        nextAction?: string;
+      };
+      callSummary: {
+        callSummary: string;
+      };
+    };
   } catch (error) {
     console.error("Error parsing structured output:", error);
     throw new Error(`Failed to parse structured output: ${error}`);
@@ -150,6 +248,11 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const days = Math.min(parseInt(searchParams.get("days") || "14"), 14);
     const userId = searchParams.get("userId");
+    // skipEvaluation=true -> insert rows with default eval and
+    // evaluation_status='pending'. The /api/cron/evaluate-pending cron
+    // picks those up and runs the OpenAI evaluation out of band so
+    // ingestion never blocks on rate limits.
+    const skipEvaluation = searchParams.get("skipEvaluation") === "true";
 
     if (!userId) {
       return NextResponse.json(
@@ -414,19 +517,27 @@ export async function POST(request: NextRequest) {
       let callSummaryFromStructured: string | null = null;
       
       const textToEvaluate = vapiCall.transcript || cleanedSummary || "";
-      
-      if (textToEvaluate) {
+      // Tracks whether this row already has our structured OpenAI evaluation
+      // so we can set evaluation_status accordingly. With skipEvaluation=true
+      // we never call OpenAI and always land on 'pending'.
+      let didEvaluateNow = false;
+
+      if (skipEvaluation) {
+        parsedEvaluation = createDefaultEvaluation(vapiCall.endedReason);
+        callSummaryFromStructured = null;
+      } else if (textToEvaluate) {
         try {
           console.log(`[VAPI Sync] Evaluating call ${vapiCall.id} with our system...`);
-          // Per-call 8s cap so a single slow OpenAI response can't cause the
-          // whole sync to hit Vercel's function timeout. Falls back to the
-          // endedReason-based default eval — the call still gets inserted.
-          const evalTimeoutMs = 8000;
+          // Allow time for OpenAI rate-limit backoff (retries inside evaluate).
+          // Still capped so one pathological call cannot burn the whole route.
+          const evalTimeoutMs = 150_000;
           const structuredEvaluation = await Promise.race([
-            evaluateCallWithStructuredOutput(
-              textToEvaluate,
-              cleanedSummary,
-              vapiCall.endedReason
+            enqueueOpenAiEvaluate(() =>
+              evaluateCallWithStructuredOutput(
+                textToEvaluate,
+                cleanedSummary,
+                vapiCall.endedReason
+              )
             ),
             new Promise<never>((_, reject) =>
               setTimeout(
@@ -446,19 +557,30 @@ export async function POST(request: NextRequest) {
             summary: structuredEvaluation.callSummary.callSummary,
           };
           callSummaryFromStructured = structuredEvaluation.callSummary.callSummary;
+          didEvaluateNow = true;
         } catch (error) {
           console.error(`[VAPI Sync] Error/timeout evaluating call ${vapiCall.id}:`, error);
           // Fallback to default evaluation — insert proceeds so the call
-          // still shows up in the dashboard. Re-eval can run later via
-          // /api/calls/evaluate.
+          // still shows up in the dashboard. The evaluate-pending cron
+          // will retry later because evaluation_status stays 'pending'.
           parsedEvaluation = createDefaultEvaluation(vapiCall.endedReason);
           callSummaryFromStructured = null;
         }
       } else {
-        // No transcript/summary - use default evaluation
+        // No transcript/summary - use default evaluation. This is terminal:
+        // there is nothing to evaluate later, so mark as 'evaluated'.
         parsedEvaluation = createDefaultEvaluation(vapiCall.endedReason);
         callSummaryFromStructured = null;
+        didEvaluateNow = true;
       }
+
+      // evaluation_status values: 'pending' | 'evaluated' | 'failed'.
+      // - Rows with no transcript/summary: 'evaluated' (nothing to do later).
+      // - Rows evaluated inline: 'evaluated'.
+      // - Everything else (skipEvaluation or inline eval failure): 'pending'.
+      const evaluationStatus: "pending" | "evaluated" = didEvaluateNow
+        ? "evaluated"
+        : "pending";
 
       // Get assistant_id from VAPI call
       const assistantId = vapiCall.assistantId || vapiCall.assistant?.id || null;
@@ -489,11 +611,16 @@ export async function POST(request: NextRequest) {
         summary: callSummaryFromStructured || cleanedSummary,
         sentiment: parsedEvaluation.sentiment,
         duration,
-        type: vapiCall.type || 'outbound',
+        type: deriveDashboardCallType({
+          summary: cleanedSummary,
+          transcript: vapiCall.transcript || null,
+          outreachId: vapiCall.metadata?.outreach_id ?? null,
+        }),
         caller_phone: vapiCall.customer?.number || null,
         caller_name: callerName,
         evaluation_score: parsedEvaluation.score,
         evaluation_summary: parsedEvaluation.nextAction || null,
+        evaluation_status: evaluationStatus,
         created_at: originalTimestamp, // Use original VAPI call time
         metadata: {
           orgId: vapiCall.orgId,
@@ -535,10 +662,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Synced ${synced} calls, skipped ${skipped} existing`,
+      message: `Synced ${synced} calls, skipped ${skipped} existing${skipEvaluation ? " (evaluation deferred)" : ""}`,
       synced,
       skipped,
       total: vapiCalls.length,
+      skipEvaluation,
     });
   } catch (error) {
     console.error("[VAPI Sync] Fatal error:", error);
@@ -572,6 +700,8 @@ export async function GET() {
     params: {
       days: "Number of days to sync (max 14)",
       userId: "User ID to associate calls with",
+      skipEvaluation:
+        "If 'true', skip inline OpenAI evaluation and mark new rows evaluation_status='pending' for the evaluate-pending cron",
     },
   });
 }

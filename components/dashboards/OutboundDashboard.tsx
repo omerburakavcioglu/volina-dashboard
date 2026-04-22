@@ -759,9 +759,12 @@ function OutboundDashboardContent() {
     setSyncResult(null);
     
     try {
-      const response = await fetch(`/api/vapi/sync?userId=${user.id}&days=14`, {
-        method: 'POST',
-      });
+      // Ingestion-only: /api/cron/evaluate-pending will run OpenAI evaluation
+      // asynchronously within ~1 min so the button feels instant.
+      const response = await fetch(
+        `/api/vapi/sync?userId=${user.id}&days=14&skipEvaluation=true`,
+        { method: 'POST' }
+      );
       
       const result = await response.json();
       

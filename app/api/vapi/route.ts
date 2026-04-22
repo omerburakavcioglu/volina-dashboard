@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase";
 import { cleanCallSummary } from "@/lib/utils";
 import { EVALUATION_SYSTEM_PROMPT } from "@/lib/evaluation-prompt";
 import { transitionFunnelLead, mapCallResultToFunnelCondition, calculateNextCallSlot } from "@/lib/funnel-engine";
+import { deriveDashboardCallType, type DashboardCallType } from "@/lib/vapi-api";
 
 interface ParsedEvaluation {
   score: number | null;
@@ -537,11 +538,16 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
                     1000
                 )
               : null,
-          type: call.type || "outbound",
+          type: deriveDashboardCallType({
+            summary: summary || null,
+            transcript: transcript || null,
+            outreachId: call.metadata?.outreach_id ?? null,
+          }),
           caller_phone: call.customer?.number || null,
           caller_name: call.customer?.name || null,
           assistant_id: callAssistantId || null,
           created_at: call.startedAt || call.createdAt || new Date().toISOString(),
+          evaluation_status: "pending",
           metadata: {
             orgId: call.orgId,
             status: call.status,
@@ -579,7 +585,12 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
   // USE ONLY OUR OWN EVALUATION - VAPI evaluation is completely ignored
   let parsedEvaluation: ParsedEvaluation;
   let callSummaryFromStructured: string | null = null;
-  
+  // Tracks whether we managed to produce a structured evaluation in this
+  // request so we can set evaluation_status accordingly. When the webhook
+  // fails (rate limit, timeout, no transcript), the evaluate-pending cron
+  // will pick the row up later via evaluation_status='pending'.
+  let didEvaluateNow = false;
+
   // Check if we have transcript or summary to evaluate
   const textToEvaluate = transcript || summary || "";
   
@@ -608,7 +619,8 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       };
       
       callSummaryFromStructured = structuredEvaluation.callSummary.callSummary;
-      
+      didEvaluateNow = true;
+
       console.log("Our evaluation result:", {
         score: parsedEvaluation.score,
         sentiment: parsedEvaluation.sentiment,
@@ -626,12 +638,18 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       console.log("Using default evaluation due to error:", defaultEvaluation);
     }
   } else {
-    // No transcript/summary available - create minimal evaluation from endedReason
+    // No transcript/summary available - create minimal evaluation from endedReason.
+    // Nothing will ever be possible to evaluate later, so this is terminal.
     console.log("No transcript/summary available, creating default evaluation from endedReason");
     const defaultEvaluation = createDefaultEvaluation(call.endedReason);
     parsedEvaluation = defaultEvaluation;
     callSummaryFromStructured = null;
+    didEvaluateNow = true;
   }
+
+  const evaluationStatus: "pending" | "evaluated" = didEvaluateNow
+    ? "evaluated"
+    : "pending";
   
   const sentiment = parsedEvaluation.sentiment;
   const evaluationScore = parsedEvaluation.score;
@@ -646,24 +664,11 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
     source: "our_evaluation_only",
   });
 
-  // Determine call type
-  let callType: "appointment" | "inquiry" | "follow_up" | "cancellation" | "outbound" = "outbound";
-  const lowerSummary = (summary || transcript || "").toLowerCase();
-  
-  if (outreachId) {
-    callType = "outbound";
-  } else if (lowerSummary.includes("cancel")) {
-    callType = "cancellation";
-  } else if (lowerSummary.includes("follow") || lowerSummary.includes("follow-up")) {
-    callType = "follow_up";
-  } else if (
-    lowerSummary.includes("appointment") ||
-    lowerSummary.includes("schedule") ||
-    lowerSummary.includes("book") ||
-    lowerSummary.includes("randevu")
-  ) {
-    callType = "appointment";
-  }
+  const callType: DashboardCallType = deriveDashboardCallType({
+    summary: summary || null,
+    transcript: transcript || null,
+    outreachId: outreachId ?? null,
+  });
 
   // Calculate duration
   const startTime = new Date(call.startedAt || call.createdAt).getTime();
@@ -757,6 +762,7 @@ async function handleEndOfCallReport(body: VapiWebhookPayload) {
       caller_name: leadName || call.customer?.name || null,
       evaluation_score: evaluationScore,
       evaluation_summary: evaluationSummary,
+      evaluation_status: evaluationStatus,
       tags: tags,
       metadata: {
         orgId: call.orgId,

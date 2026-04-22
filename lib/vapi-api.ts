@@ -331,6 +331,40 @@ export async function getVapiDashboardData(options: {
   };
 }
 
+/** Values allowed on `calls.type` (Supabase check constraint), not VAPI transport types. */
+export type DashboardCallType =
+  | "appointment"
+  | "inquiry"
+  | "follow_up"
+  | "cancellation"
+  | "outbound";
+
+/**
+ * Maps transcript/summary heuristics + outreach metadata to `calls.type`,
+ * matching the VAPI webhook (`app/api/vapi/route.ts`) so sync inserts pass DB checks.
+ */
+export function deriveDashboardCallType(options: {
+  summary?: string | null;
+  transcript?: string | null;
+  outreachId?: string | null;
+}): DashboardCallType {
+  if (options.outreachId) return "outbound";
+
+  const lower = (options.summary || options.transcript || "").toLowerCase();
+
+  if (lower.includes("cancel")) return "cancellation";
+  if (lower.includes("follow") || lower.includes("follow-up")) return "follow_up";
+  if (
+    lower.includes("appointment") ||
+    lower.includes("schedule") ||
+    lower.includes("book") ||
+    lower.includes("randevu")
+  ) {
+    return "appointment";
+  }
+  return "outbound";
+}
+
 /**
  * Transform VAPI call to local Call format for compatibility
  */
@@ -342,7 +376,7 @@ export function transformVapiCallToLocal(vapiCall: VapiCall): {
   summary: string | null;
   sentiment: 'positive' | 'neutral' | 'negative' | null;
   duration: number | null;
-  type: 'appointment' | 'inquiry' | 'follow_up' | 'cancellation';
+  type: DashboardCallType;
   caller_phone: string | null;
   created_at: string;
   updated_at: string;
@@ -371,28 +405,20 @@ export function transformVapiCallToLocal(vapiCall: VapiCall): {
     }
   }
 
-  // Determine call type from summary or transcript
-  let type: 'appointment' | 'inquiry' | 'follow_up' | 'cancellation' = 'inquiry';
-  const lowerContent = (vapiCall.summary || vapiCall.transcript || '').toLowerCase();
-  
-  if (lowerContent.includes('cancel')) {
-    type = 'cancellation';
-  } else if (lowerContent.includes('follow') || lowerContent.includes('follow-up')) {
-    type = 'follow_up';
-  } else if (
-    lowerContent.includes('appointment') ||
-    lowerContent.includes('schedule') ||
-    lowerContent.includes('book')
-  ) {
-    type = 'appointment';
-  }
+  const summaryText =
+    vapiCall.analysis?.summary || vapiCall.summary || null;
+  const type = deriveDashboardCallType({
+    summary: summaryText,
+    transcript: vapiCall.transcript || null,
+    outreachId: vapiCall.metadata?.outreach_id ?? null,
+  });
 
   return {
     id: vapiCall.id,
     vapi_call_id: vapiCall.id,
     recording_url: vapiCall.recordingUrl || vapiCall.stereoRecordingUrl || null,
     transcript: vapiCall.transcript || null,
-    summary: vapiCall.analysis?.summary || vapiCall.summary || null,
+    summary: summaryText,
     sentiment,
     duration,
     type,
