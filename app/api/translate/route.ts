@@ -1,6 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase";
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+
+/**
+ * Deterministic hash shared with `useCallContentTranslation` client hook so a
+ * previously saved DB translation can be matched against the current source
+ * text. Keep the algorithm identical on both sides.
+ */
+function simpleHash(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h) ^ s.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
+
+interface PersistedTranslationBlock {
+  hash: string;
+  savedAt: string;
+  summary?: string;
+  transcript?: string;
+  evaluation_summary?: string;
+}
+
+async function persistTranslation(
+  callId: string,
+  targetLang: TranslateTargetLang,
+  sourceHash: string,
+  translations: Record<string, string>
+): Promise<void> {
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("calls")
+      .select("metadata")
+      .eq("id", callId)
+      .single();
+    if (error || !data) return;
+
+    const currentMetadata =
+      (data.metadata as Record<string, unknown> | null) || {};
+    const existingTranslations =
+      (currentMetadata.translations as Record<string, PersistedTranslationBlock> | undefined) ||
+      {};
+
+    const block: PersistedTranslationBlock = {
+      hash: sourceHash,
+      savedAt: new Date().toISOString(),
+    };
+    if (typeof translations.summary === "string") block.summary = translations.summary;
+    if (typeof translations.transcript === "string") block.transcript = translations.transcript;
+    if (typeof translations.evaluation_summary === "string") {
+      block.evaluation_summary = translations.evaluation_summary;
+    }
+
+    await supabase
+      .from("calls")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({
+        metadata: {
+          ...currentMetadata,
+          translations: {
+            ...existingTranslations,
+            [targetLang]: block,
+          },
+        },
+      } as any)
+      .eq("id", callId);
+  } catch (e) {
+    console.warn("[translate] Failed to persist translation:", e);
+  }
+}
 
 /** Max characters accepted per text segment (after trimming). */
 const MAX_TEXT_LEN = 14_000;
@@ -127,9 +198,14 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       targetLang?: TranslateTargetLang;
       parts?: TranslatePart[];
+      callId?: string;
+      sourceHash?: string;
     };
 
     const targetLang = body.targetLang;
+    const callId = typeof body.callId === "string" && body.callId ? body.callId : null;
+    const providedHash =
+      typeof body.sourceHash === "string" && body.sourceHash ? body.sourceHash : null;
     if (targetLang !== "tr" && targetLang !== "en") {
       return NextResponse.json(
         { success: false, error: "targetLang must be 'tr' or 'en'" },
@@ -227,6 +303,20 @@ export async function POST(request: NextRequest) {
 
     for (const [base, arr] of chunkGroups) {
       merged[base] = Array.from({ length: arr.length }, (_, i) => arr[i] ?? "").join("");
+    }
+
+    // Persist to DB so subsequent opens of the same call on any client are
+    // instant. We do NOT await this so translation response doesn't block on
+    // the DB write.
+    if (callId) {
+      const hash =
+        providedHash ??
+        simpleHash(
+          `${normalized.find((p) => p.id === "summary")?.text ?? ""}\0${
+            normalized.find((p) => p.id === "transcript")?.text ?? ""
+          }\0${normalized.find((p) => p.id === "evaluation_summary")?.text ?? ""}`
+        );
+      void persistTranslation(callId, targetLang, hash, merged);
     }
 
     return NextResponse.json({ success: true, translations: merged });

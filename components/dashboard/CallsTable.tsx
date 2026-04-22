@@ -67,6 +67,13 @@ function CallsTableRow({
   };
 }) {
   const { language } = useLanguage();
+  const persistedTr = (
+    (call.metadata as Record<string, unknown> | undefined)?.translations as
+      | Record<string, unknown>
+      | undefined
+  )?.tr as
+    | { hash?: string; summary?: string; transcript?: string; evaluation_summary?: string }
+    | undefined;
   const contentTranslation = useCallContentTranslation({
     callId: call.id,
     enabled: isExpanded && language === "tr",
@@ -74,6 +81,7 @@ function CallsTableRow({
     summaryRaw: call.summary,
     transcriptRaw: call.transcript,
     evaluationSummaryRaw: call.evaluation_summary,
+    persistedTranslations: persistedTr ?? null,
   });
 
   const displaySummary =

@@ -22,6 +22,13 @@ function makeCacheKey(
   return `${callId}:tr:${simpleHash(`${summaryRaw}\0${transcriptRaw}\0${evaluationSummaryRaw}`)}`;
 }
 
+export interface PersistedTranslationBlock {
+  hash?: string;
+  summary?: string;
+  transcript?: string;
+  evaluation_summary?: string;
+}
+
 export interface UseCallContentTranslationArgs {
   callId: string;
   /** e.g. row expanded — avoids translating every row in the list */
@@ -30,6 +37,12 @@ export interface UseCallContentTranslationArgs {
   summaryRaw: string | null;
   transcriptRaw: string | null;
   evaluationSummaryRaw: string | null;
+  /**
+   * Translations previously persisted to `calls.metadata.translations[lang]`.
+   * When the `hash` matches the current source fingerprint, we use them
+   * immediately and skip the OpenAI round-trip — makes repeat opens instant.
+   */
+  persistedTranslations?: PersistedTranslationBlock | null;
 }
 
 export interface CallContentTranslationState {
@@ -50,6 +63,7 @@ export function useCallContentTranslation({
   summaryRaw,
   transcriptRaw,
   evaluationSummaryRaw,
+  persistedTranslations,
 }: UseCallContentTranslationArgs): CallContentTranslationState {
   const [translations, setTranslations] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -112,6 +126,32 @@ export function useCallContentTranslation({
       }
     }
 
+    // DB-persisted translation: hydrate instantly if the fingerprint matches
+    // the current source text. This is the fast-path for repeat opens (any
+    // user, any device) after the very first translation of a call.
+    if (persistedTranslations && persistedTranslations.hash === contentKey) {
+      const fromDb: Record<string, string> = {};
+      if (typeof persistedTranslations.summary === "string") {
+        fromDb.summary = persistedTranslations.summary;
+      }
+      if (typeof persistedTranslations.transcript === "string") {
+        fromDb.transcript = persistedTranslations.transcript;
+      }
+      if (typeof persistedTranslations.evaluation_summary === "string") {
+        fromDb.evaluation_summary = persistedTranslations.evaluation_summary;
+      }
+      memoryCache.set(key, fromDb);
+      try {
+        sessionStorage.setItem(`volina-ct:${key}`, JSON.stringify(fromDb));
+      } catch {
+        /* storage full */
+      }
+      setTranslations(fromDb);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const parts: { id: string; text: string }[] = [];
     if (summaryRaw?.trim()) parts.push({ id: "summary", text: summaryRaw });
     if (transcriptRaw?.trim()) parts.push({ id: "transcript", text: transcriptRaw });
@@ -137,7 +177,12 @@ export function useCallContentTranslation({
         const res = await fetch("/api/translate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ targetLang: "tr", parts }),
+          body: JSON.stringify({
+            targetLang: "tr",
+            parts,
+            callId,
+            sourceHash: contentKey,
+          }),
           signal: ac.signal,
         });
         const data = (await res.json()) as {
@@ -171,7 +216,16 @@ export function useCallContentTranslation({
     return () => {
       ac.abort();
     };
-  }, [enabled, language, callId, contentKey, summaryRaw, transcriptRaw, evaluationSummaryRaw]);
+  }, [
+    enabled,
+    language,
+    callId,
+    contentKey,
+    summaryRaw,
+    transcriptRaw,
+    evaluationSummaryRaw,
+    persistedTranslations,
+  ]);
 
   return { loading, error, translations };
 }

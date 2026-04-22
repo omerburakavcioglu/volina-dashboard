@@ -287,6 +287,10 @@ function AudioPlayer({
   const effectiveSummaryForPlayer =
     playerOverrides?.summary !== undefined ? playerOverrides.summary : call?.summary ?? null;
 
+  const playerPersistedTr =
+    (playerMeta?.translations as Record<string, unknown> | undefined)?.tr as
+      | { hash?: string; summary?: string; transcript?: string; evaluation_summary?: string }
+      | undefined;
   const playerTranslation = useCallContentTranslation({
     callId: call?.id ?? "",
     enabled: Boolean(isOpen && playerLang === "tr" && call?.id),
@@ -294,6 +298,7 @@ function AudioPlayer({
     summaryRaw: effectiveSummaryForPlayer,
     transcriptRaw: null,
     evaluationSummaryRaw: null,
+    persistedTranslations: playerPersistedTr ?? null,
   });
 
   if (!call || !call.recording_url) return null;
@@ -1699,6 +1704,10 @@ function CallRow({
   
   const validSummary = getValidEvaluationSummary(effectiveEvaluationSummary);
 
+  const persistedTr =
+    (metadata?.translations as Record<string, unknown> | undefined)?.tr as
+      | { hash?: string; summary?: string; transcript?: string; evaluation_summary?: string }
+      | undefined;
   const contentTranslation = useCallContentTranslation({
     callId: call.id,
     enabled: expanded && currentLang === "tr",
@@ -1706,6 +1715,7 @@ function CallRow({
     summaryRaw: effectiveSummary,
     transcriptRaw: call.transcript,
     evaluationSummaryRaw: effectiveEvaluationSummary,
+    persistedTranslations: persistedTr ?? null,
   });
 
   const displaySummaryBody =
