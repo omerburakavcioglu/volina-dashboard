@@ -28,11 +28,18 @@ CREATE INDEX IF NOT EXISTS idx_calls_evaluation_status_pending
   WHERE evaluation_status IN ('pending', 'processing');
 
 -- 3. Backfill existing rows so the cron does not re-process everything.
---    Rows that already have our structured evaluation -> evaluated.
---    Everything else -> pending (the cron will pick them up).
+--    A row counts as already-evaluated if ANY of these are true:
+--      - it has our new structured payload (metadata.structuredData), OR
+--      - the old evaluation pipeline populated `sentiment` (with or
+--        without evaluation_score) — these rows have usable data in the
+--        top-level columns even though the new structured format wasn't
+--        written.
+--    Everything else truly has no evaluation signal -> stays 'pending'
+--    and the evaluate-pending cron will pick it up.
 UPDATE calls
 SET evaluation_status = CASE
   WHEN (metadata -> 'structuredData') IS NOT NULL THEN 'evaluated'
+  WHEN sentiment IS NOT NULL THEN 'evaluated'
   ELSE 'pending'
 END
 WHERE evaluation_status = 'pending';
